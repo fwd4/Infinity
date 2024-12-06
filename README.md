@@ -1,5 +1,15 @@
 # Infinity $\infty$: Scaling Bitwise AutoRegressive Modeling for High-Resolution Image Synthesis
 
+<div align="center">
+  
+[![arXiv](https://img.shields.io/badge/arXiv%20paper-2404.02905-b31b1b.svg)](https://arxiv.org/abs/2404.02905)&nbsp;
+
+</div>
+<p align="center" style="font-size: larger;">
+  <a href="https://arxiv.org/abs/2412.04431">Infinity: Scaling Bitwise AutoRegressive Modeling for High-Resolution Image Synthesis</a>
+</p>
+
+
 <p align="center">
 <img src="assets/show_images.jpg" width=95%>
 <p>
