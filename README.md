@@ -17,6 +17,7 @@
 <p>
 
 ## 🔥 Updates!!
+* Dec 12, 2024: 💻 Add Project Page
 * Dec 5, 2024: 🤗 Paper release
 
 ## 📑 Open-Source Plan
