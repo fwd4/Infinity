@@ -6,7 +6,7 @@
 [![arXiv](https://img.shields.io/static/v1?label=Project%20Page&message=Github&color=blue&logo=github-pages)](https://foundationvision.github.io/infinity.project/)&nbsp;
 [![arXiv](https://img.shields.io/badge/arXiv%20paper-2412.04431-b31b1b.svg)](https://arxiv.org/abs/2412.04431)&nbsp;
 [![huggingface weights](https://img.shields.io/badge/%F0%9F%A4%97%20Weights-FoundationVision/Infinity-yellow)](https://huggingface.co/FoundationVision/infinity)&nbsp;
-[![code](https://img.shields.io/badge/%F0%9F%A4%97%20Code-FoundationVision/Infinity-green)](https://github.com/FoundationVision/Infinity)&nbsp;
+[![code](https://img.shields.io/badge/%F0%9F%A4%96%20Code-FoundationVision/Infinity-green)](https://github.com/FoundationVision/Infinity)&nbsp;
 
 </div>
 <p align="center" style="font-size: larger;">
@@ -167,6 +167,21 @@ Infinity shows strong scaling capabilities as illustrated before. Thus we are en
 
 
 Currently, Infinity-20B is still on the training phrase. We will release Infinity-20B once the training is completed.
+
+## Citation
+If our work assists your research, feel free to give us a star ⭐ or cite us using:
+
+```
+@misc{han2024infinityscalingbitwiseautoregressive,
+    title={Infinity: Scaling Bitwise AutoRegressive Modeling for High-Resolution Image Synthesis}, 
+    author={Jian Han and Jinlai Liu and Yi Jiang and Bin Yan and Yuqi Zhang and Zehuan Yuan and Bingyue Peng and Xiaobing Liu},
+    year={2024},
+    eprint={2412.04431},
+    archivePrefix={arXiv},
+    primaryClass={cs.CV},
+    url={https://arxiv.org/abs/2412.04431}, 
+}
+```
 
 ## License
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
