@@ -35,7 +35,7 @@ We also provide [interactive_infer.ipynb](tools/interactive_infer.ipynb) for you
   - [x] Web Demo 
   - [x] Inference Code
   - [x] Infinity-2B Checkpoints
-  - [x] VAE Checkpoints
+  - [x] Visual Tokenizer Checkpoints
 
 
 
