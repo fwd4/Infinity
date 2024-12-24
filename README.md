@@ -81,12 +81,12 @@ We provide Infinity models for you to play with, which are on <a href='https://h
 ### Infinity
 |   model    | Resolution |   GenEval    | DPG | HPSv2.1 | HF weights🤗                                                                        |
 |:----------:|:-----:|:--------:|:---------:|:-------:|:------------------------------------------------------------------------------------|
-|  Infinity-2B   |  1024  |   0.69 / 0.73 $^{\dagger}$   |    83.5    |  32.2   | [infinity_2B.pth](https://huggingface.co/FoundationVision/var/resolve/main/infinity_2b_reg.pth) |
+|  Infinity-2B   |  1024  |   0.69 / 0.73 $^{\dagger}$   |    83.5    |  32.2   | [infinity_2B.pth](https://huggingface.co/FoundationVision/infinity/blob/main/infinity_2b_reg.pth) |
 |  Infinity-20B   |  1024  |  -  |    -    |  -   | [Coming Soon](TBD) |
 
 ${\dagger}$ result is tested with a [prompt rewriter](tools/prompt_rewriter.py). 
 
-You can load these models to generate images via the codes in [interactive_infer.ipynb](tools/interactive_infer.ipynb). Note: you need to download [infinity_vae_d32reg.pth](https://huggingface.co/FoundationVision/var/resolve/main/var_d30.pth) and [flan-t5-xl](https://huggingface.co/google/flan-t5-xl) first.
+You can load these models to generate images via the codes in [interactive_infer.ipynb](tools/interactive_infer.ipynb). Note: you need to download [infinity_vae_d32reg.pth](https://huggingface.co/FoundationVision/infinity/blob/main/infinity_vae_d32_reg.pth) and [flan-t5-xl](https://huggingface.co/google/flan-t5-xl) first.
 
 
 ## Installation
