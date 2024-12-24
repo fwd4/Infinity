@@ -6,6 +6,7 @@
 [![arXiv](https://img.shields.io/static/v1?label=Project%20Page&message=Github&color=blue&logo=github-pages)](https://foundationvision.github.io/infinity.project/)&nbsp;
 [![arXiv](https://img.shields.io/badge/arXiv%20paper-2412.04431-b31b1b.svg)](https://arxiv.org/abs/2412.04431)&nbsp;
 [![huggingface weights](https://img.shields.io/badge/%F0%9F%A4%97%20Weights-FoundationVision/Infinity-yellow)](https://huggingface.co/FoundationVision/infinity)&nbsp;
+[![code](https://img.shields.io/badge/%F0%9F%A4%97%20Code-FoundationVision/Infinity-green)](https://github.com/FoundationVision/Infinity)&nbsp;
 
 </div>
 <p align="center" style="font-size: larger;">
