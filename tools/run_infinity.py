@@ -275,32 +275,34 @@ def load_transformer(vae, args):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model_path = args.model_path
     if args.checkpoint_type == 'torch': 
-        assert ('ar-' in model_path) or ('slim-' in model_path)
-        # copy large model to local, save slim to local, and copy slim to nas, and load local slim model
+        # copy large model to local; save slim to local; and copy slim to nas; load local slim model
         if osp.exists(args.cache_dir):
             local_model_path = osp.join(args.cache_dir, 'tmp', model_path.replace('/', '_'))
         else:
             local_model_path = model_path
-        slim_model_path = model_path.replace('ar-', 'slim-')
-        local_slim_model_path = local_model_path.replace('ar-', 'slim-')
-        os.makedirs(osp.dirname(local_slim_model_path), exist_ok=True)
-        print(f'model_path: {model_path}, slim_model_path: {slim_model_path}')
-        print(f'local_model_path: {local_model_path}, local_slim_model_path: {local_slim_model_path}')
-        if not osp.exists(local_slim_model_path):
-            if osp.exists(slim_model_path):
-                print(f'copy {slim_model_path} to {local_slim_model_path}')
-                shutil.copyfile(slim_model_path, local_slim_model_path)
-            else:
-                if not osp.exists(local_model_path):
-                    print(f'copy {model_path} to {local_model_path}')
-                    shutil.copyfile(model_path, local_model_path)
-                save_slim_model(local_model_path, save_file=local_slim_model_path, device=device)
-                print(f'copy {local_slim_model_path} to {slim_model_path}')
-                if not osp.exists(slim_model_path):
-                    shutil.copyfile(local_slim_model_path, slim_model_path)
-                    os.remove(local_model_path)
-                    os.remove(model_path)
-        slim_model_path = local_slim_model_path
+        if args.enable_model_cache:
+            slim_model_path = model_path.replace('ar-', 'slim-')
+            local_slim_model_path = local_model_path.replace('ar-', 'slim-')
+            os.makedirs(osp.dirname(local_slim_model_path), exist_ok=True)
+            print(f'model_path: {model_path}, slim_model_path: {slim_model_path}')
+            print(f'local_model_path: {local_model_path}, local_slim_model_path: {local_slim_model_path}')
+            if not osp.exists(local_slim_model_path):
+                if osp.exists(slim_model_path):
+                    print(f'copy {slim_model_path} to {local_slim_model_path}')
+                    shutil.copyfile(slim_model_path, local_slim_model_path)
+                else:
+                    if not osp.exists(local_model_path):
+                        print(f'copy {model_path} to {local_model_path}')
+                        shutil.copyfile(model_path, local_model_path)
+                    save_slim_model(local_model_path, save_file=local_slim_model_path, device=device)
+                    print(f'copy {local_slim_model_path} to {slim_model_path}')
+                    if not osp.exists(slim_model_path):
+                        shutil.copyfile(local_slim_model_path, slim_model_path)
+                        os.remove(local_model_path)
+                        os.remove(model_path)
+            slim_model_path = local_slim_model_path
+        else:
+            slim_model_path = model_path
         print(f'load checkpoint from {slim_model_path}')
 
     if args.model_type == 'infinity_2b':
@@ -358,9 +360,11 @@ def add_common_arguments(parser):
     parser.add_argument('--use_flex_attn', type=int, default=0, choices=[0,1])
     parser.add_argument('--enable_positive_prompt', type=int, default=0, choices=[0,1])
     parser.add_argument('--cache_dir', type=str, default='/dev/shm')
+    parser.add_argument('--enable_model_cache', type=int, default=0, choices=[0,1])
     parser.add_argument('--checkpoint_type', type=str, default='torch')
     parser.add_argument('--seed', type=int, default=0)
     parser.add_argument('--bf16', type=int, default=1, choices=[0,1])
+    
 
 
 if __name__ == '__main__':

@@ -110,9 +110,9 @@ Each "[h_div_w_template1]_[num_examples].jsonl" file contains lines of dumped js
   {
     "image_path": "path/to/image, required",
     "h_div_w": "float value of h_div_w for the image, required",
-    "long_caption": long_caption of the image, required",
+    "long_caption": long caption of the image, required",
     "long_caption_type": "InternVL 2.0, required",
-    "short_caption": "short of the image, optional",
+    "text": "short caption of the image, optional",
     "short_caption_type": "user prompt, , optional"
   }
   ```
