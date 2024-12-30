@@ -330,7 +330,7 @@ class Infinity(nn.Module):
                                         H = self.num_heads,
                                         L = aligned_L)
                 attn_fn_compile_dict[patchs_nums_tuple] = attn_fn
-            return attn_fn_compile_dict
+        return attn_fn_compile_dict
         
     def get_logits(self, h: torch.Tensor, cond_BD: Optional[torch.Tensor]):
         """

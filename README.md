@@ -113,7 +113,7 @@ Each "[h_div_w_template1]_[num_examples].jsonl" file contains lines of dumped js
     "long_caption": long caption of the image, required",
     "long_caption_type": "InternVL 2.0, required",
     "text": "short caption of the image, optional",
-    "short_caption_type": "user prompt, , optional"
+    "short_caption_type": "user prompt, optional"
   }
   ```
 

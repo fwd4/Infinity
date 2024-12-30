@@ -19,3 +19,4 @@ einops
 openai
 httpx==0.20.0
 opencv-python
+flash_attn
