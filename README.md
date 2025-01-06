@@ -78,7 +78,7 @@ We provide Infinity models for you to play with, which are on <a href='https://h
 |  $V_d=2^{24}$   |  16  |   0.75   |  22.0   |    0.30    |  23.5   | [infinity_vae_d24.pth](https://huggingface.co/FoundationVision/infinity/blob/main/infinity_vae_d24.pth) |
 |  $V_d=2^{32}$   |  16  |   0.61   |  22.7   |    0.23    |  24.4   | [infinity_vae_d32.pth](https://huggingface.co/FoundationVision/infinity/blob/main/infinity_vae_d32.pth) |
 |  $V_d=2^{64}$   |  16  |   0.33   |  24.9   |     0.15     |  26.4   | [infinity_vae_d64.pth](https://huggingface.co/FoundationVision/infinity/blob/main/infinity_vae_d64.pth) |
-| $V_d=2^{32}$ |  16  | 0.75 |  21.9   |     0.32     |  23.6   | [infinity_vae_d32_reg.pth](https://huggingface.co/FoundationVision/infinity/blob/main/infinity_vae_d32_reg.pth) |
+| $V_d=2^{32}$ |  16  | 0.75 |  21.9   |     0.32     |  23.6   | [infinity_vae_d32_reg.pth](https://huggingface.co/FoundationVision/Infinity/blob/main/infinity_vae_d32reg.pth) |
 
 ### Infinity
 |   model    | Resolution |   GenEval    | DPG | HPSv2.1 | HF weights🤗                                                                        |
@@ -88,7 +88,7 @@ We provide Infinity models for you to play with, which are on <a href='https://h
 
 ${\dagger}$ result is tested with a [prompt rewriter](tools/prompt_rewriter.py). 
 
-You can load these models to generate images via the codes in [interactive_infer.ipynb](tools/interactive_infer.ipynb). Note: you need to download [infinity_vae_d32reg.pth](https://huggingface.co/FoundationVision/infinity/blob/main/infinity_vae_d32_reg.pth) and [flan-t5-xl](https://huggingface.co/google/flan-t5-xl) first.
+You can load these models to generate images via the codes in [interactive_infer.ipynb](tools/interactive_infer.ipynb). Note: you need to download [infinity_vae_d32reg.pth](https://huggingface.co/FoundationVision/Infinity/blob/main/infinity_vae_d32reg.pth) and [flan-t5-xl](https://huggingface.co/google/flan-t5-xl) first.
 
 
 ## Installation
