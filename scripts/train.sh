@@ -103,7 +103,7 @@ train.py \
 --wpe=1 \
 --dynamic_resolution_across_gpus 1 \
 --enable_dynamic_length_prompt 1 \
---reweight_loss_by_scale 0 \
+--reweight_loss_by_scale 1 \
 --add_lvl_embeding_only_first_block 1 \
 --rope2d_each_sa_layer 1 \
 --rope2d_normalized_by_hw 2 \
@@ -117,6 +117,6 @@ train.py \
 --prefetch_factor=16 \
 --noise_apply_strength 0.3 \
 --noise_apply_layers 13 \
---apply_spatial_patchify 1 \
+--apply_spatial_patchify 0 \
 --use_flex_attn=True \
 --pad=128

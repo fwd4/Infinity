@@ -155,6 +155,10 @@ We provide [eval.sh](scripts/eval.sh) for evaluation on various benchmarks with 
 bash scripts/eval.sh
 ```
 
+## Fine-tuning
+Fine-tuning Infinity is quite simple where you only need append ```--rush_resume=[infinity_vae_d32reg.pth]``` to [train.sh](scripts/train.sh). 
+
+
 ## One More Thing: Infinity-20B is coming soon 📆
 Infinity shows strong scaling capabilities as illustrated before. Thus we are encouraged to continue to scale up the model size to 20B. Here we present the side-by-side comparison results between Infinity-2B and Infinity-20B.
 

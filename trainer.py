@@ -51,7 +51,6 @@ class InfinityTrainer(object):
         
         self.gpt: Union[DDP, FSDP, nn.Module]
         self.gpt, self.vae_local, self.quantize_local = gpt, vae_local, vae_local.quantize
-        self.quantize_local: VectorQuantizer2
         self.gpt_opt: AmpOptimizer = gpt_opt
         self.gpt_wo_ddp: Union[Infinity, torch._dynamo.eval_frame.OptimizedModule] = gpt_wo_ddp  # after torch.compile
         self.gpt_wo_ddp_ema = gpt_wo_ddp_ema
@@ -208,7 +207,7 @@ class InfinityTrainer(object):
                 last_scale_area = np.sqrt(scale_schedule[-1].prod())
                 for (pt, ph, pw) in scale_schedule[:training_scales]:
                     this_scale_area = np.sqrt(pt * ph * pw)
-                    lw.extend([last_scale_area / this_scale_area for _ in range(ph * pw)])
+                    lw.extend([last_scale_area / this_scale_area for _ in range(pt * ph * pw)])
                 lw = torch.tensor(lw, device=loss.device)[None, ...]
                 lw = lw / lw.sum()
             else:
