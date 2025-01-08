@@ -156,7 +156,7 @@ bash scripts/eval.sh
 ```
 
 ## Fine-tuning
-Fine-tuning Infinity is quite simple where you only need append ```--rush_resume=[infinity_vae_d32reg.pth]``` to [train.sh](scripts/train.sh). Note that you have to carefully set ```--pn``` for training and inference code since it decides the resolution of fine-tuning.
+Fine-tuning Infinity is quite simple where you only need append ```--rush_resume=[infinity_2b_reg.pth]``` to [train.sh](scripts/train.sh). Note that you have to carefully set ```--pn``` for training and inference code since it decides the resolution of fine-tuning.
 
 ```
 --pn=0.06M  # 256x256 resolution (including other aspect ratios with same number of pixels)
