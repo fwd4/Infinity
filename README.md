@@ -67,7 +67,7 @@ Bitwise Self-Correction✨: Teacher-forcing training in AR brings severe train-t
 <img src="assets/scaling_models.png" width=95%>
 <p>
 
-## Infinity Model ZOO
+## 🏘 Infinity Model ZOO
 We provide Infinity models for you to play with, which are on <a href='https://huggingface.co/FoundationVision/infinity'><img src='https://img.shields.io/badge/%F0%9F%A4%97%20weights-FoundationVision/Infinity-yellow'></a> or can be downloaded from the following links:
 
 ### Visual Tokenizer
@@ -91,11 +91,11 @@ ${\dagger}$ result is tested with a [prompt rewriter](tools/prompt_rewriter.py).
 You can load these models to generate images via the codes in [interactive_infer.ipynb](tools/interactive_infer.ipynb). Note: you need to download [infinity_vae_d32reg.pth](https://huggingface.co/FoundationVision/Infinity/blob/main/infinity_vae_d32reg.pth) and [flan-t5-xl](https://huggingface.co/google/flan-t5-xl) first.
 
 
-## Installation
+## ⚽️ Installation
 1. We use FlexAttention to speedup training, which requires `torch>=2.5.1`.
 2. Install other pip packages via `pip3 install -r requirements.txt`.
 
-## Data Preparation
+## 🎨 Data Preparation
 The structure of the training dataset is listed as bellow. The training dataset contains a list of json files with name "[h_div_w_template1]_[num_examples].jsonl". Here [h_div_w_template] is a float number, which is the template ratio of height to width of the image. [num_examples] is the number of examples where $h/w$ is around h_div_w_template. [dataset_t2i_iterable.py](infinity/dataset/dataset_t2i_iterable.py) supports traing with >100M examples. But we have to specify the number of examples for each h/w template ratio in the filename.
 
   ```
@@ -120,7 +120,7 @@ Each "[h_div_w_template1]_[num_examples].jsonl" file contains lines of dumped js
   Still have questions about the data preparation? Easy, we have provided a toy dataset with 10 images. You can prepare your dataset by referring [this](data/infinity_toy_data).
 
 
-## Training Scripts
+## 🧁 Training Scripts
 We provide [train.sh](scripts/train.sh) for train Infinity-2B with one command
 ```shell
 bash scripts/train.sh
@@ -149,20 +149,23 @@ You can monitor the training process by checking the logs in `local_output/log.t
 
 If your experiment is interrupted, just rerun the command, and the training will **automatically resume** from the last checkpoint in `local_output/ckpt*.pth`.
 
-## Evaluation
+## 🍭 Evaluation
 We provide [eval.sh](scripts/eval.sh) for evaluation on various benchmarks with only one command. In particular, [eval.sh](scripts/eval.sh) supports evaluation on commonly used metrics such as [GenEval](https://github.com/djghosh13/geneval), [ImageReward](https://github.com/THUDM/ImageReward), [HPSv2.1](https://github.com/tgxs002/HPSv2), FID and Validation Loss. Please refer to [evaluation/README.md](evaluation/README.md) for more details.
 ```shell
 bash scripts/eval.sh
 ```
 
-## Fine-tuning
-Fine-tuning Infinity is quite simple where you only need append ```--rush_resume=[infinity_2b_reg.pth]``` to [train.sh](scripts/train.sh). Note that you have to carefully set ```--pn``` for training and inference code since it decides the resolution of fine-tuning.
+## ✨ Fine-Tuning
+Fine-tuning Infinity is quite simple where you only need to append ```--rush_resume=[infinity_2b_reg.pth]``` to [train.sh](scripts/train.sh). Note that you have to carefully set ```--pn``` for training and inference code since it decides the resolution of images.
 
 ```
 --pn=0.06M  # 256x256 resolution (including other aspect ratios with same number of pixels)
 --pn=0.25M  # 512x512 resolution
 --pn=1M     # 1024x1024 resolution
 ```
+
+After fine-tuning, you will get a checkpoint like [model_dir]/ar-ckpt-giter(xxx)K-ep(xxx)-iter(xxx)-last.pth. Note that this checkpoint cotains training states besides model weights. Inference with this model should enable ```--enable_model_cache=1``` in [eval.sh](scripts/eval.sh) or [interactive_infer.ipynb](tools/interactive_infer.ipynb).
+
 
 
 ## One More Thing: Infinity-20B is coming soon 📆
@@ -179,7 +182,7 @@ Infinity shows strong scaling capabilities as illustrated before. Thus we are en
 
 Currently, Infinity-20B is still on the training phrase. We will release Infinity-20B once the training is completed.
 
-## Citation
+## 📖 Citation
 If our work assists your research, feel free to give us a star ⭐ or cite us using:
 
 ```
