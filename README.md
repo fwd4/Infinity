@@ -207,7 +207,7 @@ Currently, Infinity-20B is still on the training phrase. We will release Infinit
 If our work assists your research, feel free to give us a star ⭐ or cite us using:
 
 ```
-@misc{han2024infinityscalingbitwiseautoregressive,
+@misc{Infinity,
     title={Infinity: Scaling Bitwise AutoRegressive Modeling for High-Resolution Image Synthesis}, 
     author={Jian Han and Jinlai Liu and Yi Jiang and Bin Yan and Yuqi Zhang and Zehuan Yuan and Bingyue Peng and Xiaobing Liu},
     year={2024},
@@ -215,6 +215,18 @@ If our work assists your research, feel free to give us a star ⭐ or cite us us
     archivePrefix={arXiv},
     primaryClass={cs.CV},
     url={https://arxiv.org/abs/2412.04431}, 
+}
+```
+
+```
+@misc{VAR,
+      title={Visual Autoregressive Modeling: Scalable Image Generation via Next-Scale Prediction}, 
+      author={Keyu Tian and Yi Jiang and Zehuan Yuan and Bingyue Peng and Liwei Wang},
+      year={2024},
+      eprint={2404.02905},
+      archivePrefix={arXiv},
+      primaryClass={cs.CV},
+      url={https://arxiv.org/abs/2404.02905}, 
 }
 ```
 
