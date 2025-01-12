@@ -22,6 +22,7 @@
 ## 🔥 Updates!!
 * Dec 24, 2024: 🔥 Training and Testing Codes && Checkpoints && Demo released!
 * Dec 12, 2024: 💻 Add Project Page
+* Dec 10, 2024: 🏆 Visual AutoRegressive Modeling received NeurIPS 2024 Best Paper Award.
 * Dec 5, 2024: 🤗 Paper release
 
 ## 🕹️ Try and Play with Infinity!
