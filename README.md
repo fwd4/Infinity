@@ -22,6 +22,7 @@
 ## 🔥 Updates!!
 * Dec 24, 2024: 🔥 Training and Testing Codes && Checkpoints && Demo released!
 * Dec 12, 2024: 💻 Add Project Page
+* Dec 10, 2024: 🏆 Visual AutoRegressive Modeling received NeurIPS 2024 Best Paper Award.
 * Dec 5, 2024: 🤗 Paper release
 
 ## 🕹️ Try and Play with Infinity!
@@ -166,7 +167,28 @@ Fine-tuning Infinity is quite simple where you only need to append ```--rush_res
 
 After fine-tuning, you will get a checkpoint like [model_dir]/ar-ckpt-giter(xxx)K-ep(xxx)-iter(xxx)-last.pth. Note that this checkpoint cotains training states besides model weights. Inference with this model should enable ```--enable_model_cache=1``` in [eval.sh](scripts/eval.sh) or [interactive_infer.ipynb](tools/interactive_infer.ipynb).
 
+## Use Docker
 
+If you are interested in reproducing the paper model locally (inference only) you can refer to our Docker container. This one-stop approach is especially suitable for people with no background knowledge.
+
+### 1. Download weights
+
+Download `flan-t5-xl` folder, `infinity_2b_reg.pth` and `infinity_vae_d32reg.pth` files to weights folder.
+
+### 2. Build Docker container
+
+```
+ docker build -t my-flash-attn-env .
+ docker run --gpus all -it --name my-container -v {your-local-path}:/workspace my-flash-attn-env
+```
+
+### 3. Run
+
+```
+python Infinity/tools/reproduce.py
+```
+
+Note: You can also use your own prompts, just modify the prompt in `reproduce.py`.
 
 ## One More Thing: Infinity-20B is coming soon 📆
 Infinity shows strong scaling capabilities as illustrated before. Thus we are encouraged to continue to scale up the model size to 20B. Here we present the side-by-side comparison results between Infinity-2B and Infinity-20B.
@@ -186,7 +208,7 @@ Currently, Infinity-20B is still on the training phrase. We will release Infinit
 If our work assists your research, feel free to give us a star ⭐ or cite us using:
 
 ```
-@misc{han2024infinityscalingbitwiseautoregressive,
+@misc{Infinity,
     title={Infinity: Scaling Bitwise AutoRegressive Modeling for High-Resolution Image Synthesis}, 
     author={Jian Han and Jinlai Liu and Yi Jiang and Bin Yan and Yuqi Zhang and Zehuan Yuan and Bingyue Peng and Xiaobing Liu},
     year={2024},
@@ -194,6 +216,18 @@ If our work assists your research, feel free to give us a star ⭐ or cite us us
     archivePrefix={arXiv},
     primaryClass={cs.CV},
     url={https://arxiv.org/abs/2412.04431}, 
+}
+```
+
+```
+@misc{VAR,
+      title={Visual Autoregressive Modeling: Scalable Image Generation via Next-Scale Prediction}, 
+      author={Keyu Tian and Yi Jiang and Zehuan Yuan and Bingyue Peng and Liwei Wang},
+      year={2024},
+      eprint={2404.02905},
+      archivePrefix={arXiv},
+      primaryClass={cs.CV},
+      url={https://arxiv.org/abs/2404.02905}, 
 }
 ```
 

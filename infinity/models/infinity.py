@@ -16,7 +16,7 @@ from timm.models import register_model
 from torch.utils.checkpoint import checkpoint
 from PIL import Image
 import numpy as np
-from torch.nn.attention.flex_attention import flex_attention
+# from torch.nn.attention.flex_attention import flex_attention
 
 import infinity.utils.dist as dist
 from infinity.utils.dist import for_visualize
