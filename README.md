@@ -20,6 +20,7 @@
 <p>
 
 ## 🔥 Updates!!
+* Feb 7, 2025: 🔥 Infinity-8B Demo is released! Check [demo](https://opensource.bytedance.com/gmpt/t2i/invite).
 * Dec 24, 2024: 🔥 Training and Testing Codes && Checkpoints && Demo released!
 * Dec 12, 2024: 💻 Add Project Page
 * Dec 10, 2024: 🏆 Visual AutoRegressive Modeling received NeurIPS 2024 Best Paper Award.
