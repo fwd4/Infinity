@@ -20,7 +20,7 @@
 <p>
 
 ## 🔥 Updates!!
-* Feb 7, 2025: 🔥 Infinity-8B Demo is released! Check [demo](https://opensource.bytedance.com/gmpt/t2i/invite).
+* Feb 7, 2025: 🌺 Infinity-8B Demo is released! Check [demo](https://opensource.bytedance.com/gmpt/t2i/invite).
 * Dec 24, 2024: 🔥 Training and Testing Codes && Checkpoints && Demo released!
 * Dec 12, 2024: 💻 Add Project Page
 * Dec 10, 2024: 🏆 Visual AutoRegressive Modeling received NeurIPS 2024 Best Paper Award.
@@ -191,15 +191,15 @@ python Infinity/tools/reproduce.py
 
 Note: You can also use your own prompts, just modify the prompt in `reproduce.py`.
 
-## One More Thing: Infinity-20B is coming soon 📆
-Infinity shows strong scaling capabilities as illustrated before. Thus we are encouraged to continue to scale up the model size to 20B. Here we present the side-by-side comparison results between Infinity-2B and Infinity-20B.
+## Infinity-8B v.s. Infinity-2B
+Infinity shows strong scaling capabilities as illustrated before. Thus we are encouraged to continue to scale up the model size to larger size. Here we present the side-by-side comparison results between Infinity-2B and Infinity-8B.
 
-| Prompt     | Infinity (# params=2B)     | Infinity (# params=20B)     |
+| Prompt     | Infinity (# params=2B)     | Infinity (# params=8B)     |
 | ------------ | -------- | -------- |
-| Create an image with the text "Always Priority" on a wooden sign | ![](assets/2b_20b/1l.jpg) | ![](assets/2b_20b/1r.jpg) |
-| Show the text 'Driver Unknown Hard Clearly' in a surreal, imaginative style with a dreamlike landscape backdrop.    | ![](assets/2b_20b/2l.jpg) | ![](assets/2b_20b/2r.jpg) |
-| A photograph of a quaint two-story house with a distinctive red-tiled gable roof. The house is painted in a light, sandy color, which contrasts with the vibrant red roof.      | ![](assets/2b_20b/3l.jpg) | ![](assets/2b_20b/3r.jpg) |
-| A  group of students in a class    | ![](assets/2b_20b/4l.jpg) | ![](assets/2b_20b/4r.jpg) |
+| a cat holds a sign with the text 'Diffusion is dead' | ![](assets/2b_8b/1l.webp) | ![](assets/2b_8b/1r.webp) |
+| A beautiful Chinese woman with graceful features, close-up portrait, long flowing black hair, wearing a traditional silk cheongsam delicately embroidered with floral patterns, face softly illuminated by ambient light, serene expression    | ![](assets/2b_8b/2l.webp) | ![](assets/2b_8b/2r.webp) |
+| a Chinese model is sitting on a train, magazine cover, clothes made of plastic, photorealistic, futuristic style, gray and green light, movie lighting, 32K HD      | ![](assets/2b_8b/3l.webp) | ![](assets/2b_8b/3r.webp) |
+| A  group of students in a class    | ![](assets/2b_20b/4l.jpg) | ![](assets/2b_8b/4r.webp) |
 
 
 
