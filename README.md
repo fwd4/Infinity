@@ -20,6 +20,7 @@
 <p>
 
 ## 🔥 Updates!!
+* Feb 18, 2025: 🔥 Infinity-8B Weights & Code is released!
 * Feb 7, 2025: 🌺 Infinity-8B Demo is released! Check [demo](https://opensource.bytedance.com/gmpt/t2i/invite).
 * Dec 24, 2024: 🔥 Training and Testing Codes && Checkpoints && Demo released!
 * Dec 12, 2024: 💻 Add Project Page
@@ -30,10 +31,11 @@
 
 We provide a [demo website](https://opensource.bytedance.com/gmpt/t2i/invite) for you to play with Infinity and generate images interactively. Enjoy the fun of bitwise autoregressive modeling!
 
-We also provide [interactive_infer.ipynb](tools/interactive_infer.ipynb) for you to see more technical details about Infinity.
+We also provide [interactive_infer.ipynb](tools/interactive_infer.ipynb) and [interactive_infer_8b.ipynb](tools/interactive_infer_8b.ipynb) for you to see more technical details about Infinity-2B & Infinity-8B.
 
 ## 📑 Open-Source Plan
   - [ ] Infinity-20B Checkpoints
+  - [x] Infinity-8B Checkpoints
   - [x] Training Code 
   - [x] Web Demo 
   - [x] Inference Code
@@ -86,16 +88,24 @@ We provide Infinity models for you to play with, which are on <a href='https://h
 |   model    | Resolution |   GenEval    | DPG | HPSv2.1 | HF weights🤗                                                                        |
 |:----------:|:-----:|:--------:|:---------:|:-------:|:------------------------------------------------------------------------------------|
 |  Infinity-2B   |  1024  |   0.69 / 0.73 $^{\dagger}$   |    83.5    |  32.2   | [infinity_2b_reg.pth](https://huggingface.co/FoundationVision/infinity/blob/main/infinity_2b_reg.pth) |
+|  Infinity-8B   |  1024  |  -  |    -    |  -   | [infinity_8b.pth](https://huggingface.co/FoundationVision/Infinity/tree/main/infinity_8b_weights) |
 |  Infinity-20B   |  1024  |  -  |    -    |  -   | [Coming Soon](TBD) |
 
 ${\dagger}$ result is tested with a [prompt rewriter](tools/prompt_rewriter.py). 
 
-You can load these models to generate images via the codes in [interactive_infer.ipynb](tools/interactive_infer.ipynb). Note: you need to download [infinity_vae_d32reg.pth](https://huggingface.co/FoundationVision/Infinity/blob/main/infinity_vae_d32reg.pth) and [flan-t5-xl](https://huggingface.co/google/flan-t5-xl) first.
+You can load these models to generate images via the codes in [interactive_infer.ipynb](tools/interactive_infer.ipynb) and [interactive_infer_8b.ipynb](tools/interactive_infer_8b.ipynb) .
 
 
 ## ⚽️ Installation
 1. We use FlexAttention to speedup training, which requires `torch>=2.5.1`.
 2. Install other pip packages via `pip3 install -r requirements.txt`.
+3. Donload weights from huggingface. Besides vae & transformers weights on <a href='https://huggingface.co/FoundationVision/infinity'><img src='https://img.shields.io/badge/%F0%9F%A4%97%20weights-FoundationVision/Infinity-yellow'></a>, you should also download [flan-t5-xl](https://huggingface.co/google/flan-t5-xl).
+```
+from transformers import T5Tokenizer, T5ForConditionalGeneration
+tokenizer = T5Tokenizer.from_pretrained("google/flan-t5-xl")
+model = T5ForConditionalGeneration.from_pretrained("google/flan-t5-xl")
+```
+These three lines will download flan-t5-xl to your ~/.cache/huggingface directory.
 
 ## 🎨 Data Preparation
 The structure of the training dataset is listed as bellow. The training dataset contains a list of json files with name "[h_div_w_template1]_[num_examples].jsonl". Here [h_div_w_template] is a float number, which is the template ratio of height to width of the image. [num_examples] is the number of examples where $h/w$ is around h_div_w_template. [dataset_t2i_iterable.py](infinity/dataset/dataset_t2i_iterable.py) supports traing with >100M examples. But we have to specify the number of examples for each h/w template ratio in the filename.
@@ -200,10 +210,6 @@ Infinity shows strong scaling capabilities as illustrated before. Thus we are en
 | A beautiful Chinese woman with graceful features, close-up portrait, long flowing black hair, wearing a traditional silk cheongsam delicately embroidered with floral patterns, face softly illuminated by ambient light, serene expression    | ![](assets/2b_8b/2l.webp) | ![](assets/2b_8b/2r.webp) |
 | a Chinese model is sitting on a train, magazine cover, clothes made of plastic, photorealistic, futuristic style, gray and green light, movie lighting, 32K HD      | ![](assets/2b_8b/3l.webp) | ![](assets/2b_8b/3r.webp) |
 | A  group of students in a class    | ![](assets/2b_20b/4l.jpg) | ![](assets/2b_8b/4r.webp) |
-
-
-
-Currently, Infinity-20B is still on the training phrase. We will release Infinity-20B once the training is completed.
 
 ## 📖 Citation
 If our work assists your research, feel free to give us a star ⭐ or cite us using:

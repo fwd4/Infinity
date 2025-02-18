@@ -172,6 +172,7 @@ def load_infinity(
     apply_spatial_patchify=0,
     use_flex_attn=False,
     bf16=False,
+    checkpoint_type='torch',
 ):
     print(f'[Loading Infinity]')
     text_maxlen = 512
@@ -207,8 +208,12 @@ def load_infinity(
         torch.cuda.empty_cache()
 
         print(f'[Load Infinity weights]')
-        state_dict = torch.load(model_path, map_location=device)
-        print(infinity_test.load_state_dict(state_dict))
+        if checkpoint_type == 'torch':
+            state_dict = torch.load(model_path, map_location=device)
+            print(infinity_test.load_state_dict(state_dict))
+        elif checkpoint_type == 'torch_shard':
+            from transformers.modeling_utils import load_sharded_checkpoint
+            load_sharded_checkpoint(infinity_test, model_path, strict=False)
         infinity_test.rng = torch.Generator(device=device)
         return infinity_test
 
@@ -252,7 +257,7 @@ def joint_vi_vae_encode_decode(vae, image_path, scale_schedule, device, tgt_h, t
 def load_visual_tokenizer(args):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     # load vae
-    if args.vae_type in [16,18,20,24,32,64]:
+    if args.vae_type in [14,16,18,20,24,32,64]:
         from infinity.models.bsq_vae.vae import vae_model
         schedule_mode = "dynamic"
         codebook_dim = args.vae_type
@@ -304,9 +309,13 @@ def load_transformer(vae, args):
         else:
             slim_model_path = model_path
         print(f'load checkpoint from {slim_model_path}')
+    elif args.checkpoint_type == 'torch_shard':
+        slim_model_path = model_path
 
     if args.model_type == 'infinity_2b':
         kwargs_model = dict(depth=32, embed_dim=2048, num_heads=2048//128, drop_path_rate=0.1, mlp_ratio=4, block_chunks=8) # 2b model
+    elif args.model_type == 'infinity_8b':
+        kwargs_model = dict(depth=40, embed_dim=3584, num_heads=28, drop_path_rate=0.1, mlp_ratio=4, block_chunks=8)
     elif args.model_type == 'infinity_layer12':
         kwargs_model = dict(depth=12, embed_dim=768, num_heads=8, drop_path_rate=0.1, mlp_ratio=4, block_chunks=4)
     elif args.model_type == 'infinity_layer16':
@@ -335,6 +344,7 @@ def load_transformer(vae, args):
         apply_spatial_patchify=args.apply_spatial_patchify,
         use_flex_attn=args.use_flex_attn,
         bf16=args.bf16,
+        checkpoint_type=args.checkpoint_type,
     )
     return infinity
 
