@@ -498,7 +498,7 @@ class AutoEncoder(nn.Module):
         h = h.to(dtype=torch.float32)
         # print(z.shape)
         # Multiscale LFQ            
-        z, all_indices, all_loss = self.quantizer(h)
+        z, all_indices, _, _, all_loss, _ = self.quantizer(h)
         x_recon = self.decoder(z)
         vq_output = {
             "commitment_loss": torch.mean(all_loss) * self.lfq_weight, # here commitment loss is sum of commitment loss and entropy penalty
