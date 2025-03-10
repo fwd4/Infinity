@@ -3,7 +3,7 @@
 set -x
 
 # set dist args
-# SINGLE=1
+SINGLE=1
 nproc_per_node=${ARNOLD_WORKER_GPU}
 
 if [ ! -z "$SINGLE" ] && [ "$SINGLE" != "0" ]; then
@@ -35,7 +35,7 @@ echo "[master_port: ${master_port}]"
 export OMP_NUM_THREADS=8
 export NCCL_IB_DISABLE=0
 export NCCL_IB_GID_INDEX=3
-export NCCL_SOCKET_IFNAME=eth0
+export NCCL_SOCKET_IFNAME=enp3s0
 
 
 BED=checkpoints
@@ -88,7 +88,7 @@ train.py \
 --exp_name=${exp_name} \
 --tblr=6e-3 \
 --pn 0.06M \
---model=2bc8 \
+--model=layer12c4 \
 --lbs=4 \
 --workers=8 \
 --short_cap_prob 0.5 \
@@ -118,5 +118,5 @@ train.py \
 --noise_apply_strength 0.3 \
 --noise_apply_layers 13 \
 --apply_spatial_patchify 0 \
---use_flex_attn=True \
+--use_flex_attn=0 \
 --pad=128

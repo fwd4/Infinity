@@ -7,11 +7,17 @@ import numpy as np
 import torch.nn as nn
 import torch.nn.functional as F
 try:
-    from torch.nn.attention.flex_attention import flex_attention, create_block_mask
+    from torch.nn.attention.flex_attention import flex_attention, create_block_mask, and_masks, or_masks
     flex_attention_available = True
 except ImportError:
     print(f"[Warning] flex attention need pytorch 2.5.0+ but your version is {torch.__version__}")
     flex_attention_available = False
+
+# Import flash_attn's attention
+from flash_attn import flash_attn_func                  # q, k, or v: BLHc, ret: BLHc
+from flash_attn import flash_attn_varlen_kvpacked_func  # qkv: N3Hc, ret: NHc
+
+from torch.nn.functional import scaled_dot_product_attention as slow_attn    # q, k, v: BHLc
 
 def _causal_mask(b, h, q_idx, kv_idx):
     return q_idx >= kv_idx
@@ -69,9 +75,90 @@ def _generate_var_infer_mask_with_kv_cache(lengths):
 
     return var_mask_mod
 
+pix = [1, 2, 4, 6, 8, 12, 16, 20, 24, 32, 40, 48, 64]
+# pix = [1, 8, 16, 24, 32, 40, 48, 64]
+row_aff = [p // 4 for p in pix]
+qlen_raw = [x*x for x in pix]
+qlen = torch.tensor(np.cumsum(qlen_raw), device='cuda')
+pix = torch.tensor(pix, device='cuda')
+# print(qlen)
+
+MASK_RIGHT=6
+
+def infi_mask(lengths):
+    n_mask_stages = max(0, len(lengths) - len(pix) + MASK_RIGHT)
+    last_stage = len(lengths) - 1
+    def get_stage_i_mask(i):
+        row_affinity = pix[last_stage - i] ** 2 // 8
+        def lbound(b, h, q_idx, kv_idx):
+            left_distance = kv_idx - qlen[last_stage - i - 1]
+            return q_idx * pix[last_stage - i] // pix[last_stage] - left_distance < row_affinity
+        def rbound(b, h, q_idx, kv_idx):
+            left_distance = kv_idx - qlen[last_stage - i - 1]
+            return -q_idx * pix[last_stage - i] // pix[last_stage] + left_distance < row_affinity
+        return and_masks(lbound, rbound)
+    
+    stage_masks = infi_const_mask
+    for i in range(n_mask_stages):
+        stage_masks = or_masks(stage_masks, get_stage_i_mask(i))
+        break
+        #stage_masks.append(get_stage_i_mask(i))
+    return stage_masks
+    #return or_masks(*stage_masks, infi_const_mask)
+
+
+def infi_mask2(lengths, offsets, sink_stage, kv_opt=False):
+    n_mask_stages = 0
+    row_affinity = lengths[-1] // 8
+    sink_rb = offsets[-1] if sink_stage+1 >= len(offsets) else offsets[sink_stage+1]
+    diag_mask_offset = sink_rb if kv_opt else offsets[-2]
+    print(f"kv_opt: {kv_opt}, sink_stage: {sink_stage}, sink_rb: {sink_rb}, diag_mask_offset: {diag_mask_offset}")
+    def infi_const_mask(b, h, q_idx, kv_idx):
+        return kv_idx <= sink_rb
+    def lbound(b, h, q_idx, kv_idx):
+        left_distance = kv_idx - diag_mask_offset
+        return q_idx - left_distance < row_affinity
+    def rbound(b, h, q_idx, kv_idx):
+        left_distance = kv_idx - diag_mask_offset
+        return -q_idx + left_distance < row_affinity
+    return or_masks(infi_const_mask, and_masks(lbound, rbound))
+
+# def per_scale_score_mod1(b, h, q_idx, kv_idx):
+#     return (q_idx - (kv_idx - qlen[-2])) <= 8*pix[-1]
+
+# def per_scale_score_mod2(b, h, q_idx, kv_idx):
+#     return ((kv_idx - qlen[-2]) - q_idx) <= 8*pix[-1]
+
+# def per_scale_score_mod4(b, h, q_idx, kv_idx):
+#     return (q_idx * 48 // 64 - (kv_idx - qlen[-3])) <= 6*pix[-3]
+
+# def per_scale_score_mod5(b, h, q_idx, kv_idx):
+#     return (- q_idx * 48 // 64 + (kv_idx - qlen[-3])) <= 6*pix[-3]
+
+# def per_scale_score_mod6(b, h, q_idx, kv_idx):
+#     return (q_idx * 40 // 64 - (kv_idx - qlen[-4])) <= 5*pix[-4]
+
+# def per_scale_score_mod7(b, h, q_idx, kv_idx):
+#     return (- q_idx * 40 // 64 + (kv_idx - qlen[-4])) <= 5*pix[-4]
+
+# def per_scale_score_mod8(b, h, q_idx, kv_idx):
+#     return (q_idx * 32 // 64 - (kv_idx - qlen[-5])) <= 4*pix[-5]
+
+# def per_scale_score_mod9(b, h, q_idx, kv_idx):
+#     return (- q_idx * 32 // 64 + (kv_idx - qlen[-5])) <= 4*pix[-5]
+
+# def per_scale_score_mod3(b, h, q_idx, kv_idx):
+#     return kv_idx <= qlen[-5]
+    
+# stage13_mod = and_masks(per_scale_score_mod1, per_scale_score_mod2) # 64x64
+# stage12_mod = and_masks(per_scale_score_mod4, per_scale_score_mod5) # 48x48
+# stage11_mod = and_masks(per_scale_score_mod6, per_scale_score_mod7) # 40x40
+# stage10_mod = and_masks(per_scale_score_mod8, per_scale_score_mod9) # 32x32
+# infi_mask = or_masks(stage10_mod, stage11_mod, stage12_mod, stage13_mod, per_scale_score_mod3)
+
 class FlexAttn(nn.Module):
     def __init__(
-            self, block_scales:list, mask_type:str, B, H, L:int, auto_padding=False
+            self, block_scales:list, mask_type:str, B, H, Q_L, KV_L:int, auto_padding=False, kv_sink_stage=-2, kv_opt=False
     ):
         """
         :param block_scales: accept VAR's block sizes like [(1,1), (2,2), (3,3)]
@@ -84,8 +171,10 @@ class FlexAttn(nn.Module):
         if not flex_attention_available:
             raise NotImplementedError((f"[Error] flex attention need pytorch 2.5.0+ but your version is {torch.__version__}"))
 
+        self.kv_sink_stage = kv_sink_stage
+        self.kv_opt = kv_opt
         self.support_mask_type = ["var", "causal", "var_infer_mask_with_kv_cache"]
-        self.auto_padding = auto_padding
+        self.auto_padding = False #auto_padding #False
 
         self.flex_attention = torch.compile(flex_attention)
 
@@ -94,10 +183,12 @@ class FlexAttn(nn.Module):
 
         self.offsets = _length_to_offsets(self.lengths, device='cuda')
 
-        # if L paded to align 128, block need to cover padding area
-        if self.offsets[-1] < L:
-            self.offsets = torch.cat((self.offsets, torch.tensor([L], device='cuda')), dim=0)
+        self.use_flash = len(self.offsets) <= 10
 
+        # if L paded to align 128, block need to cover padding area
+        # if self.offsets[-1] < L:
+        #     self.offsets = torch.cat((self.offsets, torch.tensor([L], device='cuda')), dim=0)
+        
         if mask_type == "var":
             self.mask_mod = _generate_var_mask_mod(self.offsets)
             self.block_mask = create_block_mask(self.mask_mod, B = B, H = H, Q_LEN = L, KV_LEN = L, device = 'cuda', _compile = True)
@@ -106,19 +197,26 @@ class FlexAttn(nn.Module):
             self.block_mask = create_block_mask(self.mask_mod, B = B, H = H, Q_LEN = L, KV_LEN = L, device = 'cuda', _compile = True)
         elif mask_type == 'var_infer_mask_with_kv_cache':
             self.mask_mod = _generate_var_infer_mask_with_kv_cache(self.lengths)
-            self.block_mask = create_block_mask(self.mask_mod, B = B, H = H, Q_LEN = L, KV_LEN = L, device = 'cuda', _compile = True)
+            Q_LP = (Q_L + 127) // 128 * 128
+            KV_LP = (KV_L + 127) // 128 * 128
+            mask = and_masks(infi_mask2(self.lengths, self.offsets, self.kv_sink_stage, self.kv_opt), self.mask_mod)
+            #mask = self.mask_mod
+            self.block_mask = create_block_mask(mask, B = 1, H = 1, Q_LEN = Q_L, KV_LEN = KV_L, device = 'cuda', _compile = True)
+            print(f"{self.block_mask}")
         else:
             raise NotImplementedError(f"{mask_type} not supportted in FlexAttn, support type:{self.support_mask_type}")
 
 
     def forward(self, q, k, v, scale = None):
-        if self.auto_padding:
+        if self.use_flash:
+            oup = slow_attn(query=q, key=k, value=v, scale=scale, attn_mask=None, dropout_p=0)
+        elif self.auto_padding:
             q_pad_len = (128 - q.shape[-2] % 128) % 128
             kv_pad_len = (128 - k.shape[-2] % 128) % 128
-            q_pad = F.pad(q, (0, 0, 0, q_pad_len))
-            k_pad = F.pad(k, (0, 0, 0, kv_pad_len))
+            q_pad = F.pad(q.to(v.dtype), (0, 0, 0, q_pad_len))
+            k_pad = F.pad(k.to(v.dtype), (0, 0, 0, kv_pad_len))
             v_pad = F.pad(v, (0, 0, 0, kv_pad_len))
-            oup = self.flex_attention(q_pad.to(v_pad.dtype), k_pad.to(v.dtype), v_pad, block_mask = self.block_mask, scale = scale)
+            oup = self.flex_attention(q_pad, k_pad, v_pad, block_mask = self.block_mask, scale = scale)
             if q_pad_len > 0:
                 oup = oup[:,:,:-q_pad_len]
         else:

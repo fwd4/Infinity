@@ -2,6 +2,7 @@
 Definitions of blocks of VAR transformer model.
 """
 
+import time
 import math
 import os
 from functools import partial
@@ -35,22 +36,26 @@ except ImportError:
         return (x * torch.rsqrt(x.pow(2).mean(-1, keepdim=True).add_(epsilon))) * weight
 
 
+scores_ = []
+rope_triton = True
+
+
 def precompute_rope2d_freqs_grid(dim, dynamic_resolution_h_w, rope2d_normalized_by_hw, pad_to_multiplier=1, max_height=2048 // 16, max_width=2048 // 16, base=10000.0, device=None, scaling_factor=1.0):
     # split the dimension into half, one for x and one for y
-    half_dim = dim // 2
-    inv_freq = 1.0 / (base ** (torch.arange(0, half_dim, 2, dtype=torch.int64).float().to(device) / half_dim)) # namely theta, 1 / (10000^(i/half_dim)), i=0,2,..., half_dim-2
-    t_height = torch.arange(max_height, device=device, dtype=torch.int64).type_as(inv_freq)
+    half_dim = dim // 2  #64
+    inv_freq = 1.0 / (base ** (torch.arange(0, half_dim, 2, dtype=torch.int64).float().to(device) / half_dim)) # namely theta, 1 / (10000^(i/half_dim)), i=0,2,..., half_dim-2    shape:[32]
+    t_height = torch.arange(max_height, device=device, dtype=torch.int64).type_as(inv_freq) #shape [128]
     t_width = torch.arange(max_width, device=device, dtype=torch.int64).type_as(inv_freq)
     t_height = t_height / scaling_factor
-    freqs_height = torch.outer(t_height, inv_freq)  # (max_height, dim / (1 for 1d, 2 for 2d, 3 for 3d) / 2), namely y*theta
+    freqs_height = torch.outer(t_height, inv_freq)  # (max_height, dim / (1 for 1d, 2 for 2d, 3 for 3d) / 2), namely y*theta  shape：torch.Size([128, 32])
     t_width = t_width / scaling_factor
-    freqs_width = torch.outer(t_width, inv_freq)  # (max_width, dim / (1 for 1d, 2 for 2d, 3 for 3d) / 2), namely x*theta
+    freqs_width = torch.outer(t_width, inv_freq)  # (max_width, dim / (1 for 1d, 2 for 2d, 3 for 3d) / 2), namely x*theta  shape：torch.Size([128, 32])
     freqs_grid_map = torch.concat([
-        freqs_height[:, None, :].expand(-1, max_width, -1), # (max_height, max_width, dim / (1 for 1d, 2 for 2d, 3 for 3d) / 2)
-        freqs_width[None, :, :].expand(max_height, -1, -1), # (max_height, max_width, dim / (1 for 1d, 2 for 2d, 3 for 3d) / 2)
-    ], dim=-1)  # (max_height, max_width, dim / (1 for 1d, 2 for 2d, 3 for 3d))
+        freqs_height[:, None, :].expand(-1, max_width, -1), # (max_height, max_width, dim / (1 for 1d, 2 for 2d, 3 for 3d) / 2)  shape：torch.Size([128, 128, 32])  每一行一样
+        freqs_width[None, :, :].expand(max_height, -1, -1), # (max_height, max_width, dim / (1 for 1d, 2 for 2d, 3 for 3d) / 2)  shape：torch.Size([128, 128, 32])  每一行不一样
+    ], dim=-1)  # (max_height, max_width, dim / (1 for 1d, 2 for 2d, 3 for 3d))   shape: torch.Size([128, 128, 64])
     freqs_grid_map = torch.stack([torch.cos(freqs_grid_map), torch.sin(freqs_grid_map)], dim=0)
-    # (2, max_height, max_width, dim / (1 for 1d, 2 for 2d, 3 for 3d))
+    # (2, max_height, max_width, dim / (1 for 1d, 2 for 2d, 3 for 3d))   (2,128,128,64)
 
     rope2d_freqs_grid = {}
     for h_div_w in dynamic_resolution_h_w:
@@ -73,18 +78,18 @@ def precompute_rope2d_freqs_grid(dim, dynamic_resolution_h_w, rope2d_normalized_
                     (torch.arange(ph) * (uph / ph)).reshape(ph, 1).expand(ph, pw),
                     (torch.arange(pw) * (upw / pw)).reshape(1, pw).expand(ph, pw),
                 ], dim=-1).round().int() # (ph, pw, 2)
-                indices = indices.reshape(-1, 2) # (ph*pw, 2)
-                rope_cache = freqs_grid_map[:, indices[:,0], indices[:,1], :] # (2, ph*pw, half_head_dim)
+                indices = indices.reshape(-1, 2) # (ph*pw, 2)  tensor([[0, 0]], dtype=torch.int32)
+                rope_cache = freqs_grid_map[:, indices[:,0], indices[:,1], :] # (2, ph*pw, half_head_dim) 2:(cos,sin)
                 rope_cache = rope_cache.reshape(2, ph, pw, -1)
             elif rope2d_normalized_by_hw == 0:
                 rope_cache = freqs_grid_map[:, :ph, :pw, :] # (2, ph, pw, half_head_dim)
             else:
                 raise ValueError(f'Unknown rope2d_normalized_by_hw: {rope2d_normalized_by_hw}')
             rope_cache_list.append(rope_cache.reshape(2, ph_mul_pw, -1))
-        cat_rope_cache = torch.cat(rope_cache_list, 1) # (2, seq_len, half_head_dim)
-        if cat_rope_cache.shape[1] % pad_to_multiplier:
+        cat_rope_cache = torch.cat(rope_cache_list, 1) # (2, seq_len, half_head_dim) ################torch.Size([2, 10521, 64])
+        if cat_rope_cache.shape[1] % pad_to_multiplier:  #10521 % 128 = 25
             pad = torch.zeros(2, pad_to_multiplier - cat_rope_cache.shape[1] % pad_to_multiplier, half_dim)
-            cat_rope_cache = torch.cat([cat_rope_cache, pad], dim=1)
+            cat_rope_cache = torch.cat([cat_rope_cache, pad], dim=1)  ###############        #shape: torch.Size([2, 10624, 64])
         cat_rope_cache = cat_rope_cache[:,None,None,None] # (2, 1, 1, 1, seq_len, half_dim)
         for pn in dynamic_resolution_h_w[h_div_w]:
             scale_schedule = dynamic_resolution_h_w[h_div_w][pn]['scales']
@@ -92,20 +97,83 @@ def precompute_rope2d_freqs_grid(dim, dynamic_resolution_h_w, rope2d_normalized_
             rope2d_freqs_grid[str(tuple(tmp_scale_schedule))] = cat_rope_cache
     return rope2d_freqs_grid
 
+def rotary_emb(mask_id, scale_schedule, rope2d_freqs_grid, scale_ind):
+    start = 0
+    if isinstance(scale_ind, list):
+        start_list = [np.sum([item[0] * item[1] * item[2] for item in scale_schedule[:ind]]) for ind in scale_ind]
+    else:
+        scale_value = scale_schedule[scale_ind]  
+        seq_len = scale_value[1] * scale_value[2] 
+        if scale_ind >= 1:
+            assert len(scale_schedule[0]) == 3
+            start = np.sum([item[0] * item[1] * item[2] for item in scale_schedule[:scale_ind]])
 
-def apply_rotary_emb(q, k, scale_schedule, rope2d_freqs_grid, pad_to_multiplier, rope2d_normalized_by_hw, scale_ind):
+    if mask_id ==  None:
+        rope_cache = rope2d_freqs_grid[:, :, :, :, start:start+seq_len]
+    else:
+        indices = torch.tensor([start_list[i] + id_val for i in range(len(mask_id)) for id_val in mask_id[i]]).to(rope2d_freqs_grid.device)             
+        # 使用高效的索引选择操作  
+        rope_cache = torch.index_select(  
+            rope2d_freqs_grid,   
+            dim=4,   
+            index=indices.view(-1)  
+        )     #(2, 1, 1, 1, seq_len, half_dim)
+        # rope_cache_list = []
+        # for i in range(len(mask_id)):
+        #     rope_cache = rope2d_freqs_grid[:, :, :, :, start_list[i] + mask_id[i]]
+        #     rope_cache_list.append(rope_cache)
+        # rope_cache = torch.cat(rope_cache_list, dim=4)  # Concatenate along the sequence length dimension  
+
+    return rope_cache
+
+def apply_rotary(q, k, rope_cache, using_flash=False):
+    if using_flash:
+        q = q.transpose(1, 2)   #(B:batch_size, L:seq_len, H:heads, c:head_dim) --> (B,H,L,C)
+        k = k.transpose(1, 2)
+    qk = torch.stack((q, k), dim=0)  #(2, batch_size, heads, seq_len, head_dim)
+    device_type = qk.device.type
+    device_type = device_type if isinstance(device_type, str) and device_type != "mps" else "cpu"
+    qk = qk.reshape(*qk.shape[:-1], -1, 2) #(2, batch_size, heads, seq_len, half_head_dim, 2)
+    qk = torch.stack([
+        rope_cache[0] * qk[...,0] - rope_cache[1] * qk[...,1],
+        rope_cache[1] * qk[...,0] + rope_cache[0] * qk[...,1],
+    ], dim=-1) # (2, batch_size, heads, seq_len, half_head_dim, 2), here stack + reshape should not be concate
+    qk = qk.reshape(*qk.shape[:-2], -1) #(2, batch_size, heads, seq_len, head_dim)
+    q, k = qk.unbind(dim=0) # (batch_size, heads, seq_len, head_dim)
+    if using_flash:
+        q = q.transpose(1, 2)
+        k = k.transpose(1, 2)
+    return q, k
+
+def apply_rotary_emb(q, k, mask_id, scale_schedule, rope2d_freqs_grid, pad_to_multiplier, rope2d_normalized_by_hw, scale_ind, using_flash=False):
+    if using_flash:
+        q = q.transpose(1, 2)   #(B:batch_size, L:seq_len, H:heads, c:head_dim) --> (B,H,L,C)
+        k = k.transpose(1, 2)
     qk = torch.stack((q, k), dim=0)  #(2, batch_size, heads, seq_len, head_dim)
     device_type = qk.device.type
     device_type = device_type if isinstance(device_type, str) and device_type != "mps" else "cpu"
     with torch.autocast(device_type=device_type, enabled=False):
         seq_len = qk.shape[3]
         start = 0
-        if scale_ind >= 1:
-            assert len(scale_schedule[0]) == 3
-            start = np.sum([item[0] * item[1] * item[2] for item in scale_schedule[:scale_ind]])
+        if isinstance(scale_ind, list):
+            start_list = [np.sum([item[0] * item[1] * item[2] for item in scale_schedule[:ind]]) for ind in scale_ind]
+        else:
+            if scale_ind >= 1:
+                assert len(scale_schedule[0]) == 3
+                start = np.sum([item[0] * item[1] * item[2] for item in scale_schedule[:scale_ind]])
+
         rope2d_freqs_grid[str(tuple(scale_schedule))] = rope2d_freqs_grid[str(tuple(scale_schedule))].to(qk.device)
-        assert start+seq_len <= rope2d_freqs_grid[str(tuple(scale_schedule))].shape[4]
-        rope_cache = rope2d_freqs_grid[str(tuple(scale_schedule))][:, :, :, :, start:start+seq_len] # rope_cache shape: [2, 1, 1, 1, seq_len, half_head_dim]
+        
+        # assert start+seq_len <= rope2d_freqs_grid[str(tuple(scale_schedule))].shape[4]  
+        if mask_id ==  None:
+            rope_cache = rope2d_freqs_grid[str(tuple(scale_schedule))][:, :, :, :, start:start+seq_len]
+        else:
+            # rope_cache = rope2d_freqs_grid[str(tuple(scale_schedule))][:, :, :, :, start+mask_id] #start:start+seq_len # rope_cache shape: [2, 1, 1, 1, seq_len, half_head_dim]
+            rope_cache_list = []
+            for i in range(len(mask_id)):
+                rope_cache = rope2d_freqs_grid[str(tuple(scale_schedule))][:, :, :, :, start_list[i] + mask_id[i]]
+                rope_cache_list.append(rope_cache)
+            rope_cache = torch.cat(rope_cache_list, dim=4)  # Concatenate along the sequence length dimension
         qk = qk.reshape(*qk.shape[:-1], -1, 2) #(2, batch_size, heads, seq_len, half_head_dim, 2)
         qk = torch.stack([
             rope_cache[0] * qk[...,0] - rope_cache[1] * qk[...,1],
@@ -113,6 +181,9 @@ def apply_rotary_emb(q, k, scale_schedule, rope2d_freqs_grid, pad_to_multiplier,
         ], dim=-1) # (2, batch_size, heads, seq_len, half_head_dim, 2), here stack + reshape should not be concate
         qk = qk.reshape(*qk.shape[:-2], -1) #(2, batch_size, heads, seq_len, head_dim)
         q, k = qk.unbind(dim=0) # (batch_size, heads, seq_len, head_dim)
+    if using_flash:
+        q = q.transpose(1, 2)
+        k = k.transpose(1, 2)
     return q, k
 
 
@@ -245,7 +316,8 @@ class SelfAttention(nn.Module):
         self.cached_v = None
     
     # NOTE: attn_bias_or_two_vector is None during inference
-    def forward(self, x, attn_bias_or_two_vector: Union[torch.Tensor, Tuple[torch.IntTensor, torch.IntTensor]], attn_fn=None, scale_schedule=None, rope2d_freqs_grid=None, scale_ind=0):
+    def forward(self, x, mask_id, attn_bias_or_two_vector: Union[torch.Tensor, Tuple[torch.IntTensor, torch.IntTensor]], 
+                attn_fn=None, scale_schedule=None, rope2d_freqs_grid=None, scale_ind=0 ,si_para=0 ,kv_opt=None):
         """
         :param (fp32) x: shaped (B or batch_size, L or seq_length, C or hidden_dim); if seq-parallel is used, the `L` dim would be shared
         :param (fp32) attn_bias_or_two_vector:
@@ -273,39 +345,104 @@ class SelfAttention(nn.Module):
         # x: fp32
         B, L, C = x.shape
         
+        self.using_flash = 1
+        
         # qkv: amp, bf16
         qkv = F.linear(input=x, weight=self.mat_qkv.weight, bias=torch.cat((self.q_bias, self.zero_k_bias, self.v_bias))).view(B, L, 3, self.num_heads, self.head_dim)  # BL3Hc
         if self.using_flash: q, k, v = qkv.unbind(dim=2); L_dim = 1           # q or k or v: all are shaped in (B:batch_size, L:seq_len, H:heads, c:head_dim)
         else: q, k, v = qkv.permute(2, 0, 3, 1, 4).unbind(dim=0); L_dim = 2   # q or k or v: all are shaped in (B:batch_size, H:heads, L:seq_len, c:head_dim)
+
+        #q_, k_, v_ = qkv.unbind(dim=2)
         
         if self.cos_attn:   # always True
             scale_mul = self.scale_mul_1H11.clamp_max(self.max_scale_mul).exp() # 11H1 (flash), or 1H11 (not flash)
-            q = F.normalize(q, dim=-1, eps=1e-12).mul(scale_mul).contiguous()   # fp32
+            if self.using_flash:
+                scale_mul = scale_mul.view(1, 1, self.num_heads, 1)
+            q = F.normalize(q, dim=-1, eps=1e-12).mul(scale_mul).contiguous()   # fp32  (B:batch_size, L:seq_len, H:heads, c:head_dim)
+            #q_ = F.normalize(q_, dim=-1, eps=1e-12).mul(scale_mul.view(1,1, self.num_heads, 1)).contiguous()   # fp32
             k = F.normalize(k, dim=-1, eps=1e-12).contiguous()                  # fp32
+            #k_ = F.normalize(k_, dim=-1, eps=1e-12).contiguous()                  # fp32
             v = v.contiguous()                                                  # bf16
+            #v_ = v_.contiguous()
         else:   # be contiguous, to make kernel happy
             q = q.contiguous()      # bf16
             k = k.contiguous()      # bf16
             v = v.contiguous()      # bf16
+
         if rope2d_freqs_grid is not None:
-            q, k = apply_rotary_emb(q, k, scale_schedule, rope2d_freqs_grid, self.pad_to_multiplier, self.rope2d_normalized_by_hw, scale_ind) #, freqs_cis=freqs_cis)
+            if rope_triton == True:
+                from .rope_triton import apply_rotary_triton
+                q, k = apply_rotary_triton(q, k, rope2d_freqs_grid, self.using_flash) #, freqs_cis=freqs_cis)
+            else:
+                q, k = apply_rotary(q, k, rope2d_freqs_grid, self.using_flash) #, freqs_cis=freqs_cis)
+                
+        # if rope2d_freqs_grid is not None:
+        #     q, k = apply_rotary_emb(q, k, mask_id, scale_schedule, rope2d_freqs_grid, self.pad_to_multiplier, self.rope2d_normalized_by_hw, scale_ind, self.using_flash) #, freqs_cis=freqs_cis)
+        #     #q_, k_ = apply_rotary_emb(q_, k_, scale_schedule, rope2d_freqs_grid, self.pad_to_multiplier, self.rope2d_normalized_by_hw, scale_ind, 1) #, freqs_cis=freqs_cis)
         if self.caching:    # kv caching: only used during inference
-            if self.cached_k is None: self.cached_k = k; self.cached_v = v
-            else: k = self.cached_k = torch.cat((self.cached_k, k), dim=L_dim); v = self.cached_v = torch.cat((self.cached_v, v), dim=L_dim)
-        
+            if not isinstance(scale_ind, list):
+                if kv_opt !=  0:
+                    if scale_ind <= kv_opt : 
+                        if self.cached_k is None: 
+                            self.cached_k = k; self.cached_v = v
+                            #self.cached_k_ = k_; self.cached_v_ = v_
+                        else: 
+                            k = self.cached_k = torch.cat((self.cached_k, k), dim=L_dim); v = self.cached_v = torch.cat((self.cached_v, v), dim=L_dim)
+                    else:
+                        k = torch.cat((self.cached_k, k), dim=L_dim)
+                        v = torch.cat((self.cached_v, v), dim=L_dim)                
+                else:
+                    if scale_ind <= si_para :   #9
+                        if self.cached_k is None: 
+                            self.cached_k = k; self.cached_v = v
+                            #self.cached_k_ = k_; self.cached_v_ = v_
+                        else: 
+                            k = self.cached_k = torch.cat((self.cached_k, k), dim=L_dim); v = self.cached_v = torch.cat((self.cached_v, v), dim=L_dim)
+            else:
+                k = torch.cat((self.cached_k, k), dim=L_dim)
+                v = torch.cat((self.cached_v, v), dim=L_dim)
+
+        # k_memory_usage = k.numel() * k.element_size()  # K 的内存占用（以字节为单位）  
+        # v_memory_usage = v.numel() * v.element_size()  # V 的内存占用（以字节为单位）  
+        # print(f"K 的内存占用: {k_memory_usage} 字节")  
+        # print(f"V 的内存占用: {v_memory_usage} 字节")         
+        # print("si, k.shape", si, k.shape)
+        # torch.testing.assert_close(q, q_.transpose(1, 2))
+        # torch.testing.assert_close(k, k_.transpose(1, 2))
+        # torch.testing.assert_close(v, v_.transpose(1, 2))
+        # exit(0)
+        if 0 and not self.using_flash and L == 2304:
+            k_ = k.transpose(2, 3).reshape(B * self.num_heads, k.shape[3], k.shape[2]).contiguous()
+            q_ = q.reshape(B * self.num_heads, q.shape[2], k.shape[3]).contiguous()
+            scores = torch.baddbmm(torch.randn(1,device='cuda'), q_, k_, beta=0, alpha=self.scale)
+            for s in range(B * self.num_heads):
+                attention = torch.softmax(scores[s], dim=-1)
+                np.save(f'infi_scores/stage11/scores_{len(scores_)}_head{s}.npy', attention.to(torch.half).cpu())
+            scores_.append('Layer')
+
+        # print(q.shape, x.shape)
+
         if self.using_flash:
             if attn_bias_or_two_vector is not None: # training
                 kw = dict(VAR_visible_kvlen=attn_bias_or_two_vector[0], VAR_invisible_qlen=attn_bias_or_two_vector[1])
             else:                                   # inference (autoregressive sampling)
                 kw = dict()
-            oup = flash_attn_func(q.to(v.dtype), k.to(v.dtype), v, dropout_p=0, softmax_scale=self.scale, **kw).view(B, L, C)
+            # torch.cuda.synchronize()
+            # tt1 = time.time()
+            oup = flash_attn_func(q.to(v.dtype), k.to(v.dtype), v, dropout_p=0, softmax_scale=self.scale, **kw)
+            # torch.cuda.synchronize()
+            # ttt1 = time.time()
+            # print(f'flash attention time: {(ttt1-tt1)*1000:.4f}ms')
+            # print(oup.shape)
+            oup = oup.reshape(B, L, C)
         else:
             # if self.cos_attn: q, k are in fp32; v is in bf16
             # else: q, k, v are in bf16
             if self.use_flex_attn and attn_fn is not None:
                 oup = attn_fn(q, k, v, scale=self.scale).transpose(1, 2).reshape(B, L, C)
             else:
-                oup = slow_attn(query=q, key=k, value=v, scale=self.scale, attn_mask=attn_bias_or_two_vector, dropout_p=0).transpose(1, 2).reshape(B, L, C)
+                #oup = slow_attn(query=q, key=k, value=v, scale=self.scale, attn_mask=attn_bias_or_two_vector, dropout_p=0).transpose(1, 2).reshape(B, L, C)
+                oup = slow_attn(query=q, key=k, value=v, scale=self.scale, attn_mask=None, dropout_p=0).transpose(1, 2).reshape(B, L, C)
             # oup: bf16
         
         return self.proj_drop(self.proj(oup))
@@ -390,6 +527,8 @@ class CrossAttention(nn.Module):
         
         q_compact = q_compact.contiguous()
         kv_compact = kv_compact.contiguous()
+
+        # print(q_compact.shape, kv_compact.shape)
         
         cu_seqlens_q = torch.arange(0, Lq * (B+1), Lq, dtype=torch.int32, device=q_compact.device)
         if q_compact.dtype == torch.float32:    # todo: fp16 or bf16?
@@ -433,7 +572,7 @@ class SelfAttnBlock(nn.Module):
         
     # NOTE: attn_bias_or_two_vector is None during inference
     def forward(self, x, cond_BD, ca_kv, attn_bias_or_two_vector):  # todo: minGPT and vqgan also uses pre-norm, just like this, while MaskGiT uses post-norm
-        with torch.cuda.amp.autocast(enabled=False):
+        with torch.amp.autocast('cuda',enabled=False):
             if self.shared_aln: # always True;                   (1, 1, 6, C)  + (B, 1, 6, C)
                 gamma1, gamma2, scale1, scale2, shift1, shift2 = (self.ada_gss + cond_BD).unbind(2) # 116C + B16C =unbind(2)=> 6 B1C
             else:
@@ -491,13 +630,15 @@ class CrossAttnBlock(nn.Module):
         self.checkpointing_sa_only = checkpointing_sa_only
     
     # NOTE: attn_bias_or_two_vector is None during inference
-    def forward(self, x, cond_BD, ca_kv, attn_bias_or_two_vector, attn_fn=None, scale_schedule=None, rope2d_freqs_grid=None, scale_ind=0):    # todo: minGPT and vqgan also uses pre-norm, just like this, while MaskGiT uses post-norm
-        with torch.cuda.amp.autocast(enabled=False):    # disable half precision
+    def forward(self, x, mask_id, cond_BD, ca_kv, attn_bias_or_two_vector, attn_fn=None, scale_schedule=None, rope2d_freqs_grid=None, scale_ind=0 ,si_para=0,kv_opt=None):    # todo: minGPT and vqgan also uses pre-norm, just like this, while MaskGiT uses post-norm
+        #tt0 = time.time()
+        with torch.amp.autocast('cuda',enabled=False):    # disable half precision
             if self.shared_aln: # always True;                   (1, 1, 6, C)  + (B, 1, 6, C)
                 gamma1, gamma2, scale1, scale2, shift1, shift2 = (self.ada_gss + cond_BD).unbind(2) # 116C + B16C =unbind(2)=> 6 B1C
             else:
                 gamma1, gamma2, scale1, scale2, shift1, shift2 = self.ada_lin(cond_BD).view(-1, 1, 6, self.C).unbind(2)
-        
+
+        #tt1 = time.time()
         if self.fused_norm_func is None:
             x_sa = self.ln_wo_grad(x.float()).mul(scale1.add(1)).add_(shift1)
             if self.checkpointing_sa_only and self.training:
@@ -509,13 +650,19 @@ class CrossAttnBlock(nn.Module):
             x = x + self.drop_path(self.ffn( self.ln_wo_grad(x.float()).mul(scale2.add(1)).add_(shift2) ).mul(gamma2)) # this mul(gamma2) cannot be in-placed cuz we possibly use FusedMLP
         else:
             x_sa = self.fused_norm_func(C=self.C, eps=self.norm_eps, x=x, scale=scale1, shift=shift1)
+            #tt2 = time.time()
             if self.checkpointing_sa_only and self.training:
                 x_sa = checkpoint(self.sa, x_sa, attn_bias_or_two_vector, attn_fn, scale_schedule, rope2d_freqs_grid, use_reentrant=False)
             else:
-                x_sa = self.sa(x_sa, attn_bias_or_two_vector, attn_fn, scale_schedule, rope2d_freqs_grid, scale_ind=scale_ind)
+                x_sa = self.sa(x_sa, mask_id, attn_bias_or_two_vector, attn_fn, scale_schedule, rope2d_freqs_grid, scale_ind=scale_ind, si_para=si_para ,kv_opt=kv_opt)
+            #tt3 = time.time()
             x = x + self.drop_path(x_sa.mul_(gamma1))
+            #tt4 = time.time()
             x = x + self.ca(self.ca_norm(x), ca_kv).float().mul_(self.ca_gamma)
+            #tt5 = time.time()
             x = x + self.drop_path(self.ffn(self.fused_norm_func(C=self.C, eps=self.norm_eps, x=x, scale=scale2, shift=shift2)).mul(gamma2)) # this mul(gamma2) cannot be in-placed cuz we possibly use FusedMLP
+            #tt6 = time.time()
+            #print(np.diff(np.array([tt0, tt1, tt2, tt3, tt4, tt5, tt6])) * 1e3)
         return x
     
     def extra_repr(self) -> str:
