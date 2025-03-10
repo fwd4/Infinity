@@ -24,11 +24,20 @@ from infinity.utils import misc
 from infinity.models.flex_attn import FlexAttn
 from infinity.utils.dynamic_resolution import dynamic_resolution_h_w, h_div_w_templates
 
+def get_torch_mem_usage():
+    a, r = torch.cuda.memory_allocated(), torch.cuda.memory_reserved()
+    print(f"allocated: {a/1024**3:.2f}GB, reserved: {r/1024**3:.2f}GB")
+
 try:
     from infinity.models.fused_op import fused_ada_layer_norm, fused_ada_rms_norm
 except:
     fused_ada_layer_norm, fused_ada_rms_norm = None, None
 
+# ATTN_TIME=[]
+
+from torch.profiler import profile, schedule, tensorboard_trace_handler, ProfilerActivity
+
+trace_handler = tensorboard_trace_handler(dir_name=f"outputs/profile", use_gzip=False)
 
 class MultiInpIdentity(nn.Module):
     def forward(self, x, *args, **kwargs):
@@ -297,12 +306,14 @@ class Infinity(nn.Module):
             full_scale_schedule = dynamic_resolution_h_w[h_div_w_template][self.pn]['scales']
             if self.inference_mode:
                 apply_flex_attn_scales = list(range(1, 1+len(full_scale_schedule)))
-                mask_type = "infinity_infer_mask_with_kv_cache"
+                mask_type = "var_infer_mask_with_kv_cache"
                 auto_padding = True
             else:
                 mask_type = 'var'
                 auto_padding = False
                 apply_flex_attn_scales = [min(self.always_training_scales, len(full_scale_schedule))]
+            #import pdb
+            #pdb.set_trace()
             for scales_num in apply_flex_attn_scales:
                 print(f'====== apply flex attn hdivw: {h_div_w} scales: {scales_num} ======')
                 scale_schedule = full_scale_schedule[:scales_num]
@@ -310,6 +321,7 @@ class Infinity(nn.Module):
                 patchs_nums_tuple = tuple(scale_schedule)
                 SEQ_L = sum( pt * ph * pw for pt, ph, pw in patchs_nums_tuple)
                 aligned_L = SEQ_L+ (self.pad_to_multiplier - SEQ_L % self.pad_to_multiplier) if SEQ_L % self.pad_to_multiplier != 0 else SEQ_L
+                # print(SEQ_L, aligned_L, patchs_nums_tuple)
                 attn_fn = FlexAttn(block_scales = patchs_nums_tuple,
                                         mask_type = mask_type,
                                         B = self.batch_size, 
@@ -468,7 +480,10 @@ class Infinity(nn.Module):
         inference_mode=False,
         save_img_path=None,
         sampling_per_bits=1,
+        verbose=False,
     ):   # returns List[idx_Bl]
+        # tt0 = time.time() * 1e3
+
         if g_seed is None: rng = None
         else: self.rng.manual_seed(g_seed); rng = self.rng
         assert len(cfg_list) >= len(scale_schedule)
@@ -499,6 +514,9 @@ class Infinity(nn.Module):
                 max_seqlen_k = max(max_seqlen_k, max_seqlen_k_un)
         else:
             bs = B
+
+        # import pdb
+        #pdb.set_trace()
 
         kv_compact = self.text_norm(kv_compact)
         sos = cond_BD = self.text_proj_for_sos((kv_compact, cu_seqlens_k, max_seqlen_k)) # sos shape: [2, 4096]
@@ -535,7 +553,14 @@ class Infinity(nn.Module):
         
         num_stages_minus_1 = len(scale_schedule)-1
         summed_codes = 0
+        # print(scale_schedule)
+        # get_torch_mem_usage()
+        # tt1 = time.time() * 1e3
+
+        # backbone_time = []
         for si, pn in enumerate(scale_schedule):   # si: i-th segment
+            #t0 = time.time() * 1e3
+
             cfg = cfg_list[si]
             if si >= trunk_scale:
                 break
@@ -549,22 +574,50 @@ class Infinity(nn.Module):
                 #     last_stage = F.pad(last_stage, (0, 0, 0, need_to_pad))
                 attn_fn = self.attn_fn_compile_dict.get(tuple(scale_schedule[:(si+1)]), None)
 
+            # t1 = time.time() * 1e3
             # assert self.attn_bias_for_masking[:, :, last_L:cur_L, :cur_L].sum() == 0, f'AR with {(self.attn_bias_for_masking[:, :, last_L:cur_L, :cur_L] != 0).sum()} / {self.attn_bias_for_masking[:, :, last_L:cur_L, :cur_L].numel()} mask item'
             layer_idx = 0
+            # layer_time = []
+            #print(self.block_chunks)
+
+            # with profile(
+            #   #activities = [ProfilerActivity.CPU, ProfilerActivity.CUDA],
+            #   #activities = [ProfilerActivity.CUDA],
+            #   # schedule = tracing_schedule,
+            #   on_trace_ready = trace_handler,
+            #   profile_memory = True,
+            #   record_shapes = True,
+            #   with_stack = True
+            # ) as prof:
             for block_idx, b in enumerate(self.block_chunks):
+                # ttt0 = time.time() * 1e3
                 # last_stage shape: [4, 1, 2048], cond_BD_or_gss.shape: [4, 1, 6, 2048], ca_kv[0].shape: [64, 2048], ca_kv[1].shape [5], ca_kv[2]: int
                 if self.add_lvl_embeding_only_first_block and block_idx == 0:
                     last_stage = self.add_lvl_embeding(last_stage, si, scale_schedule, need_to_pad=need_to_pad)
                 if not self.add_lvl_embeding_only_first_block: 
                     last_stage = self.add_lvl_embeding(last_stage, si, scale_schedule, need_to_pad=need_to_pad)
-                
+
+                # print('++++++++++++++++++++++++++++++++++')
+                # print(b.module)
+                # print('++++++++++++++++++++++++++++++++++')
+
                 for m in b.module:
+                    # tt = time.time()
                     last_stage = m(x=last_stage, cond_BD=cond_BD_or_gss, ca_kv=ca_kv, attn_bias_or_two_vector=None, attn_fn=attn_fn, scale_schedule=scale_schedule, rope2d_freqs_grid=self.rope2d_freqs_grid, scale_ind=si)
+                    # layer_time.append((time.time() - tt) * 1e3)
+                    # if si == 12 and verbose:
+                    #     print(layer_idx, (time.time() - tt)* 1e3, last_stage.shape)
                     if (cfg != 1) and (layer_idx in abs_cfg_insertion_layers):
                         # print(f'add cfg={cfg} on {layer_idx}-th layer output')
                         last_stage = cfg * last_stage[:B] + (1-cfg) * last_stage[B:]
                         last_stage = torch.cat((last_stage, last_stage), 0)
                     layer_idx += 1
+                # ttt1 = time.time() * 1e3
+                #print(f"block {block_idx} exec: {ttt1 - ttt0:.2f}ms")
+
+
+            # backbone_time.append(layer_time)
+            # t2 = time.time() * 1e3
             
             if (cfg != 1) and add_cfg_on_logits:
                 # print(f'add cfg on add_cfg_on_logits')
@@ -621,6 +674,11 @@ class Infinity(nn.Module):
                 last_stage = self.word_embed(self.norm0_ve(last_stage))
                 last_stage = last_stage.repeat(bs//B, 1, 1)
 
+        #     t3 = time.time() * 1e3
+        #     print(f"stage {si}, {pn}, {t1 - t0:.2f}ms, {t2 - t1:.2f}ms, {t3 - t2:.2f}ms")
+        #     #get_torch_mem_usage()
+        # tt2 = time.time() * 1e3
+
         if inference_mode:
             for b in self.unregistered_blocks: (b.sa if isinstance(b, CrossAttnBlock) else b.attn).kv_caching(False)
         else:
@@ -636,9 +694,12 @@ class Infinity(nn.Module):
             img = vae.decode(summed_codes.squeeze(-3))
         else:
             img = vae.viz_from_ms_h_BChw(ret, scale_schedule=scale_schedule, same_shape=True, last_one=True)
+        #tt3 = time.time() * 1e3
 
         img = (img + 1) / 2
         img = img.permute(0, 2, 3, 1).mul_(255).to(torch.uint8).flip(dims=(3,))
+        # print(f"pre: {tt1 - tt0:.2f}ms, backbone: {tt2-tt1:.2f}ms, post{tt3 - tt2:.2f}ms")
+        #ATTN_TIME.append(backbone_time)
         return ret, idx_Bl_list, img
     
     @for_visualize

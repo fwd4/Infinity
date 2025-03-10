@@ -5,6 +5,7 @@ import os.path as osp
 import cv2
 import numpy as np
 from run_infinity import *
+from infinity.models.basic import scores_
 
 torch.cuda.set_device(0)
 model_path = '/workspace/Infinity/weights/infinity_2b_reg.pth'
@@ -40,8 +41,11 @@ args = argparse.Namespace(
 
 # LOAD
 text_tokenizer, text_encoder = load_tokenizer(t5_path=args.text_encoder_ckpt)
+get_torch_mem_usage()
 vae = load_visual_tokenizer(args)
+get_torch_mem_usage()
 infinity = load_transformer(vae, args)
+get_torch_mem_usage()
 
 # PROMPT
 prompts = {
@@ -64,6 +68,7 @@ prompts = {
 output_dir = "outputs"
 os.makedirs(output_dir, exist_ok=True)
 
+img_cnt = 0
 # GEN IMG
 for category, prompt in prompts.items():
     cfg = 3
@@ -93,9 +98,16 @@ for category, prompt in prompts.items():
         vae_type=args.vae_type,
         sampling_per_bits=args.sampling_per_bits,
         enable_positive_prompt=enable_positive_prompt,
+        verbose=False,
     )
+    exit(0)
+    img_cnt+=1
+    if img_cnt == 2:
+        exit(0)
 
     # SAVE
     save_path = osp.join(output_dir, f"re_{category}_test.jpg")
     cv2.imwrite(save_path, generated_image.cpu().numpy())
     print(f"{category} image saved to {save_path}")
+
+# np.save('attn_time.npy', np.array(ATTN_TIME))

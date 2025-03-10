@@ -2,6 +2,7 @@
 Definitions of blocks of VAR transformer model.
 """
 
+import time
 import math
 import os
 from functools import partial
@@ -34,6 +35,8 @@ except ImportError:
     def rms_norm_impl(x, weight, epsilon):
         return (x * torch.rsqrt(x.pow(2).mean(-1, keepdim=True).add_(epsilon))) * weight
 
+
+scores_ = []
 
 def precompute_rope2d_freqs_grid(dim, dynamic_resolution_h_w, rope2d_normalized_by_hw, pad_to_multiplier=1, max_height=2048 // 16, max_width=2048 // 16, base=10000.0, device=None, scaling_factor=1.0):
     # split the dimension into half, one for x and one for y
@@ -93,7 +96,10 @@ def precompute_rope2d_freqs_grid(dim, dynamic_resolution_h_w, rope2d_normalized_
     return rope2d_freqs_grid
 
 
-def apply_rotary_emb(q, k, scale_schedule, rope2d_freqs_grid, pad_to_multiplier, rope2d_normalized_by_hw, scale_ind):
+def apply_rotary_emb(q, k, scale_schedule, rope2d_freqs_grid, pad_to_multiplier, rope2d_normalized_by_hw, scale_ind, using_flash=False):
+    if using_flash:
+        q = q.transpose(1, 2)
+        k = k.transpose(1, 2)
     qk = torch.stack((q, k), dim=0)  #(2, batch_size, heads, seq_len, head_dim)
     device_type = qk.device.type
     device_type = device_type if isinstance(device_type, str) and device_type != "mps" else "cpu"
@@ -113,6 +119,9 @@ def apply_rotary_emb(q, k, scale_schedule, rope2d_freqs_grid, pad_to_multiplier,
         ], dim=-1) # (2, batch_size, heads, seq_len, half_head_dim, 2), here stack + reshape should not be concate
         qk = qk.reshape(*qk.shape[:-2], -1) #(2, batch_size, heads, seq_len, head_dim)
         q, k = qk.unbind(dim=0) # (batch_size, heads, seq_len, head_dim)
+    if using_flash:
+        q = q.transpose(1, 2)
+        k = k.transpose(1, 2)
     return q, k
 
 
@@ -273,39 +282,71 @@ class SelfAttention(nn.Module):
         # x: fp32
         B, L, C = x.shape
         
+        self.using_flash = 0
+        
         # qkv: amp, bf16
         qkv = F.linear(input=x, weight=self.mat_qkv.weight, bias=torch.cat((self.q_bias, self.zero_k_bias, self.v_bias))).view(B, L, 3, self.num_heads, self.head_dim)  # BL3Hc
         if self.using_flash: q, k, v = qkv.unbind(dim=2); L_dim = 1           # q or k or v: all are shaped in (B:batch_size, L:seq_len, H:heads, c:head_dim)
         else: q, k, v = qkv.permute(2, 0, 3, 1, 4).unbind(dim=0); L_dim = 2   # q or k or v: all are shaped in (B:batch_size, H:heads, L:seq_len, c:head_dim)
+
+        #q_, k_, v_ = qkv.unbind(dim=2)
         
         if self.cos_attn:   # always True
             scale_mul = self.scale_mul_1H11.clamp_max(self.max_scale_mul).exp() # 11H1 (flash), or 1H11 (not flash)
+            if self.using_flash:
+                scale_mul = scale_mul.view(1, 1, self.num_heads, 1)
             q = F.normalize(q, dim=-1, eps=1e-12).mul(scale_mul).contiguous()   # fp32
+            #q_ = F.normalize(q_, dim=-1, eps=1e-12).mul(scale_mul.view(1,1, self.num_heads, 1)).contiguous()   # fp32
             k = F.normalize(k, dim=-1, eps=1e-12).contiguous()                  # fp32
+            #k_ = F.normalize(k_, dim=-1, eps=1e-12).contiguous()                  # fp32
             v = v.contiguous()                                                  # bf16
+            #v_ = v_.contiguous()
         else:   # be contiguous, to make kernel happy
             q = q.contiguous()      # bf16
             k = k.contiguous()      # bf16
             v = v.contiguous()      # bf16
+
         if rope2d_freqs_grid is not None:
-            q, k = apply_rotary_emb(q, k, scale_schedule, rope2d_freqs_grid, self.pad_to_multiplier, self.rope2d_normalized_by_hw, scale_ind) #, freqs_cis=freqs_cis)
+            q, k = apply_rotary_emb(q, k, scale_schedule, rope2d_freqs_grid, self.pad_to_multiplier, self.rope2d_normalized_by_hw, scale_ind, self.using_flash) #, freqs_cis=freqs_cis)
+            #q_, k_ = apply_rotary_emb(q_, k_, scale_schedule, rope2d_freqs_grid, self.pad_to_multiplier, self.rope2d_normalized_by_hw, scale_ind, 1) #, freqs_cis=freqs_cis)
         if self.caching:    # kv caching: only used during inference
-            if self.cached_k is None: self.cached_k = k; self.cached_v = v
-            else: k = self.cached_k = torch.cat((self.cached_k, k), dim=L_dim); v = self.cached_v = torch.cat((self.cached_v, v), dim=L_dim)
-        
+            if self.cached_k is None: 
+                self.cached_k = k; self.cached_v = v
+                #self.cached_k_ = k_; self.cached_v_ = v_
+            else: 
+                k = self.cached_k = torch.cat((self.cached_k, k), dim=L_dim); v = self.cached_v = torch.cat((self.cached_v, v), dim=L_dim)
+                #k_ = self.cached_k_ = torch.cat((self.cached_k_, k_), dim=1); v_ = self.cached_v_ = torch.cat((self.cached_v_, v_), dim=1)
+        # torch.testing.assert_close(q, q_.transpose(1, 2))
+        # torch.testing.assert_close(k, k_.transpose(1, 2))
+        # torch.testing.assert_close(v, v_.transpose(1, 2))
+        # exit(0)
+        if 0 and not self.using_flash and L == 2304:
+            k_ = k.transpose(2, 3).reshape(B * self.num_heads, k.shape[3], k.shape[2]).contiguous()
+            q_ = q.reshape(B * self.num_heads, q.shape[2], k.shape[3]).contiguous()
+            scores = torch.baddbmm(torch.randn(1,device='cuda'), q_, k_, beta=0, alpha=self.scale)
+            for s in range(B * self.num_heads):
+                attention = torch.softmax(scores[s], dim=-1)
+                np.save(f'infi_scores/stage11/scores_{len(scores_)}_head{s}.npy', attention.to(torch.half).cpu())
+            scores_.append('Layer')
+
+        # print(q.shape, x.shape)
+
         if self.using_flash:
             if attn_bias_or_two_vector is not None: # training
                 kw = dict(VAR_visible_kvlen=attn_bias_or_two_vector[0], VAR_invisible_qlen=attn_bias_or_two_vector[1])
             else:                                   # inference (autoregressive sampling)
                 kw = dict()
-            oup = flash_attn_func(q.to(v.dtype), k.to(v.dtype), v, dropout_p=0, softmax_scale=self.scale, **kw).view(B, L, C)
+            oup = flash_attn_func(q.to(v.dtype), k.to(v.dtype), v, dropout_p=0, softmax_scale=self.scale, **kw)
+            # print(oup.shape)
+            oup = oup.reshape(B, L, C)
         else:
             # if self.cos_attn: q, k are in fp32; v is in bf16
             # else: q, k, v are in bf16
             if self.use_flex_attn and attn_fn is not None:
                 oup = attn_fn(q, k, v, scale=self.scale).transpose(1, 2).reshape(B, L, C)
             else:
-                oup = slow_attn(query=q, key=k, value=v, scale=self.scale, attn_mask=attn_bias_or_two_vector, dropout_p=0).transpose(1, 2).reshape(B, L, C)
+                #oup = slow_attn(query=q, key=k, value=v, scale=self.scale, attn_mask=attn_bias_or_two_vector, dropout_p=0).transpose(1, 2).reshape(B, L, C)
+                oup = slow_attn(query=q, key=k, value=v, scale=self.scale, attn_mask=None, dropout_p=0).transpose(1, 2).reshape(B, L, C)
             # oup: bf16
         
         return self.proj_drop(self.proj(oup))
@@ -390,6 +431,8 @@ class CrossAttention(nn.Module):
         
         q_compact = q_compact.contiguous()
         kv_compact = kv_compact.contiguous()
+
+        # print(q_compact.shape, kv_compact.shape)
         
         cu_seqlens_q = torch.arange(0, Lq * (B+1), Lq, dtype=torch.int32, device=q_compact.device)
         if q_compact.dtype == torch.float32:    # todo: fp16 or bf16?
@@ -492,12 +535,14 @@ class CrossAttnBlock(nn.Module):
     
     # NOTE: attn_bias_or_two_vector is None during inference
     def forward(self, x, cond_BD, ca_kv, attn_bias_or_two_vector, attn_fn=None, scale_schedule=None, rope2d_freqs_grid=None, scale_ind=0):    # todo: minGPT and vqgan also uses pre-norm, just like this, while MaskGiT uses post-norm
+        #tt0 = time.time()
         with torch.cuda.amp.autocast(enabled=False):    # disable half precision
             if self.shared_aln: # always True;                   (1, 1, 6, C)  + (B, 1, 6, C)
                 gamma1, gamma2, scale1, scale2, shift1, shift2 = (self.ada_gss + cond_BD).unbind(2) # 116C + B16C =unbind(2)=> 6 B1C
             else:
                 gamma1, gamma2, scale1, scale2, shift1, shift2 = self.ada_lin(cond_BD).view(-1, 1, 6, self.C).unbind(2)
-        
+
+        #tt1 = time.time()
         if self.fused_norm_func is None:
             x_sa = self.ln_wo_grad(x.float()).mul(scale1.add(1)).add_(shift1)
             if self.checkpointing_sa_only and self.training:
@@ -509,13 +554,19 @@ class CrossAttnBlock(nn.Module):
             x = x + self.drop_path(self.ffn( self.ln_wo_grad(x.float()).mul(scale2.add(1)).add_(shift2) ).mul(gamma2)) # this mul(gamma2) cannot be in-placed cuz we possibly use FusedMLP
         else:
             x_sa = self.fused_norm_func(C=self.C, eps=self.norm_eps, x=x, scale=scale1, shift=shift1)
+            #tt2 = time.time()
             if self.checkpointing_sa_only and self.training:
                 x_sa = checkpoint(self.sa, x_sa, attn_bias_or_two_vector, attn_fn, scale_schedule, rope2d_freqs_grid, use_reentrant=False)
             else:
                 x_sa = self.sa(x_sa, attn_bias_or_two_vector, attn_fn, scale_schedule, rope2d_freqs_grid, scale_ind=scale_ind)
+            #tt3 = time.time()
             x = x + self.drop_path(x_sa.mul_(gamma1))
+            #tt4 = time.time()
             x = x + self.ca(self.ca_norm(x), ca_kv).float().mul_(self.ca_gamma)
+            #tt5 = time.time()
             x = x + self.drop_path(self.ffn(self.fused_norm_func(C=self.C, eps=self.norm_eps, x=x, scale=scale2, shift=shift2)).mul(gamma2)) # this mul(gamma2) cannot be in-placed cuz we possibly use FusedMLP
+            #tt6 = time.time()
+            #print(np.diff(np.array([tt0, tt1, tt2, tt3, tt4, tt5, tt6])) * 1e3)
         return x
     
     def extra_repr(self) -> str:

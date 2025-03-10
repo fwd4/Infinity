@@ -1,0 +1,17 @@
+version: '3'
+services:
+  infinity:
+    image: infi
+    volumes:
+    - /home/change/.cache/huggingface:/root/huggingface
+    - /home/change/workspace:/workspace
+    command: bash
+    stdin_open: true
+    tty: true
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
