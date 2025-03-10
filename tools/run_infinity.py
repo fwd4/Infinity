@@ -13,6 +13,7 @@ import re
 import cv2
 import numpy as np
 import torch
+import yaml
 torch._dynamo.config.cache_size_limit=64
 import pandas as pd
 from transformers import AutoTokenizer, T5EncoderModel, T5TokenizerFast
@@ -20,11 +21,41 @@ from PIL import Image, ImageEnhance
 import torch.nn.functional as F
 from torch.cuda.amp import autocast
 
-from infinity.models.infinity import Infinity
+from infinity.models.infinity import Infinity, get_torch_mem_usage#, ATTN_TIME
 from infinity.models.basic import *
 import PIL.Image as PImage
 from torchvision.transforms.functional import to_tensor
 from infinity.utils.dynamic_resolution import dynamic_resolution_h_w, h_div_w_templates
+
+from torch.profiler import profile, schedule, tensorboard_trace_handler, ProfilerActivity
+trace_handler = tensorboard_trace_handler(dir_name=f"outputs/profile", use_gzip=False)
+
+# 添加加载YAML配置的函数
+def load_yaml_config(yaml_path):
+    if not osp.exists(yaml_path):
+        print(f"配置文件 {yaml_path} 不存在，将使用默认参数")
+        return {}
+    
+    with open(yaml_path, 'r', encoding='utf-8') as f:
+        config = yaml.safe_load(f)
+    return config
+
+def load_config(default_config_path, custom_config_path):
+    config = load_yaml_config(default_config_path)
+    # 如果指定了覆盖配置文件，则加载并合并
+    if custom_config_path and os.path.exists(custom_config_path):
+        override_config = load_yaml_config(custom_config_path)
+        # 递归合并配置
+        def merge_configs(base, override):
+            for key, value in override.items():
+                if isinstance(value, dict) and key in base and isinstance(base[key], dict):
+                    merge_configs(base[key], value)
+                else:
+                    base[key] = value
+
+        merge_configs(config, override_config)
+        print(f"已加载覆盖配置: {merge_configs}")
+    return config
 
 
 def extract_key_val(text):
@@ -40,7 +71,7 @@ def encode_prompt(text_tokenizer, text_encoder, prompt, enable_positive_prompt=F
         print(f'before positive_prompt aug: {prompt}')
         prompt = aug_with_positive_prompt(prompt)
         print(f'after positive_prompt aug: {prompt}')
-    print(f'prompt={prompt}')
+    #print(f'prompt={prompt}')
     captions = [prompt]
     tokens = text_tokenizer(text=captions, max_length=512, padding='max_length', truncation=True, return_tensors='pt')  # todo: put this into dataset
     input_ids = tokens.input_ids.cuda(non_blocking=True)
@@ -74,6 +105,8 @@ def enhance_image(image):
         color_image = color_enhancer.enhance(1.05)  # 增强饱和度
     return color_image
 
+COST, INFI_COST = [], []
+
 def gen_one_img(
     infinity_test, 
     vae, 
@@ -97,21 +130,37 @@ def gen_one_img(
     g_seed=None,
     sampling_per_bits=1,
     enable_positive_prompt=0,
+    verbose=False,
+    si_para = None,
+    ratio_list = None,
+    kv_opt = 0,
 ):
     sstt = time.time()
     if not isinstance(cfg_list, list):
         cfg_list = [cfg_list] * len(scale_schedule)
     if not isinstance(tau_list, list):
         tau_list = [tau_list] * len(scale_schedule)
+    if not isinstance(cfg_insertion_layer, list):
+        cfg_insertion_layer=[cfg_insertion_layer]
     text_cond_tuple = encode_prompt(text_tokenizer, text_encoder, prompt, enable_positive_prompt)
     if negative_prompt:
         negative_label_B_or_BLT = encode_prompt(text_tokenizer, text_encoder, negative_prompt)
     else:
         negative_label_B_or_BLT = None
-    print(f'cfg: {cfg_list}, tau: {tau_list}')
-    with torch.cuda.amp.autocast(enabled=True, dtype=torch.bfloat16, cache_enabled=True):
+    # print(f'cfg: {cfg_list}, tau: {tau_list}')
+    # with profile(
+    #   #activities = [ProfilerActivity.CPU, ProfilerActivity.CUDA],
+    #   #activities = [ProfilerActivity.CUDA],
+    #   # schedule = tracing_schedule,
+    #   on_trace_ready = trace_handler,
+    #   profile_memory = True,
+    #   record_shapes = True,
+    #   with_stack = True
+    # ) as prof, torch.amp.autocast('cuda',enabled=True, dtype=torch.bfloat16, cache_enabled=True):
+    # get_torch_mem_usage()
+    with torch.amp.autocast('cuda',enabled=True, dtype=torch.bfloat16, cache_enabled=True):
         stt = time.time()
-        _, _, img_list = infinity_test.autoregressive_infer_cfg(
+        record_codes, _, img_list = infinity_test.autoregressive_infer_cfg(
             vae=vae,
             scale_schedule=scale_schedule,
             label_B_or_BLT=text_cond_tuple, g_seed=g_seed,
@@ -123,10 +172,17 @@ def gen_one_img(
             ret_img=True, trunk_scale=1000,
             gt_leak=gt_leak, gt_ls_Bl=gt_ls_Bl, inference_mode=True,
             sampling_per_bits=sampling_per_bits,
+            verbose=verbose,
+            si_para = si_para,
+            ratio_list = ratio_list,
+            kv_opt = kv_opt
         )
-    print(f"cost: {time.time() - sstt}, infinity cost={time.time() - stt}")
+    end = time.time()
+    COST.append(end - sstt)
+    INFI_COST.append(end - stt)
+    #get_torch_mem_usage()
     img = img_list[0]
-    return img
+    return img, record_codes
 
 def get_prompt_id(prompt):
     md5 = hashlib.md5()
@@ -176,7 +232,7 @@ def load_infinity(
 ):
     print(f'[Loading Infinity]')
     text_maxlen = 512
-    with torch.cuda.amp.autocast(enabled=True, dtype=torch.bfloat16, cache_enabled=True), torch.no_grad():
+    with torch.amp.autocast('cuda',enabled=True, dtype=torch.bfloat16, cache_enabled=True), torch.no_grad():
         infinity_test: Infinity = Infinity(
             vae_local=vae, text_channels=text_channels, text_maxlen=text_maxlen,
             shared_aln=True, raw_scale_schedule=scale_schedule,
@@ -214,6 +270,7 @@ def load_infinity(
         elif checkpoint_type == 'torch_shard':
             from transformers.modeling_utils import load_sharded_checkpoint
             load_sharded_checkpoint(infinity_test, model_path, strict=False)
+            #infinity_test.to(torch.bfloat16)
         infinity_test.rng = torch.Generator(device=device)
         return infinity_test
 
@@ -374,8 +431,9 @@ def add_common_arguments(parser):
     parser.add_argument('--checkpoint_type', type=str, default='torch')
     parser.add_argument('--seed', type=int, default=0)
     parser.add_argument('--bf16', type=int, default=1, choices=[0,1])
-    
-
+    parser.add_argument('--si_para', type=int, default=1)
+    parser.add_argument('--ratio_list', type=str)    
+    parser.add_argument('--kv_opt', type=int, default=0) 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -383,6 +441,7 @@ if __name__ == '__main__':
     parser.add_argument('--prompt', type=str, default='a dog')
     parser.add_argument('--save_file', type=str, default='./tmp.jpg')
     args = parser.parse_args()
+
 
     # parse cfg
     args.cfg = list(map(float, args.cfg.split(',')))

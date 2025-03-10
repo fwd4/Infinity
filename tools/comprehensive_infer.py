@@ -3,6 +3,7 @@ import json
 import cv2
 import torch
 import traceback
+import ast
 torch._dynamo.config.cache_size_limit = 64
 
 from run_infinity import *
@@ -123,6 +124,22 @@ for candidate in candidates:
                 break
 
 
+def load_meta_prompts(meta_file_path):
+    """Load prompts from meta JSON file"""
+    with open(meta_file_path, 'r') as f:
+        meta_data = json.load(f)
+    
+    lines = []
+    for image_id, data in meta_data.items():
+        lines.append({
+            'prompt': data['prompt'],
+            'h_div_w': 1.0,
+            'infer_type': 'infer/mhhq30k_prompt',
+            'category': data['category'],
+            'image_id': image_id
+        })
+    return lines
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     add_common_arguments(parser)
@@ -140,6 +157,12 @@ if __name__ == '__main__':
     if len(args.cfg) == 1:
         args.cfg = args.cfg[0]
         
+    if args.ratio_list:  
+        try:  
+            ratio_list = ast.literal_eval(args.ratio_list)  
+        except (ValueError, SyntaxError):  
+            print("Error: Invalid format for ratio_list")  
+            ratio_list = []  # 设置默认值 
     if args.coco30k_prompts:
         from T2IBenchmark.datasets import get_coco_30k_captions, get_coco_fid_stats
         id2caption = get_coco_30k_captions()
@@ -153,26 +176,28 @@ if __name__ == '__main__':
         lines4infer = [{'prompt': prompt, 'h_div_w': 1.0, 'infer_type': 'infer/coco30k_prompt'} for prompt in captions]
     
     if args.jsonl_filepath:
-        lines4infer = []
-        with open(args.jsonl_filepath, 'r') as f:
-            cnt = 0
-            for line in f:
-                meta = json.loads(line)
-                gt_image_path = meta['image_path']
-                assert osp.exists(gt_image_path), gt_image_path
-                if args.long_caption_fid:
-                    prompt = meta['long_caption']
-                else:
-                    prompt = meta['text']
-                if not prompt:
-                    continue
-                lines4infer.append({
-                    'prompt': prompt,
-                    'h_div_w': meta['h_div_w'],
-                    'infer_type': 'val/laion_coco_long_caption',
-                    'gt_image_path': gt_image_path,
-                    'meta_line': line,
-                })
+        lines4infer = load_meta_prompts(args.jsonl_filepath)
+        #lines4infer = [x for x in lines4infer if x['category'] in ['landscape']]
+        # lines4infer = []
+        #with open(args.jsonl_filepath, 'r') as f:
+        #    cnt = 0
+        #    for line in f:
+        #        meta = json.loads(line)
+        #        gt_image_path = meta['image_path']
+        #        assert osp.exists(gt_image_path), gt_image_path
+        #        if args.long_caption_fid:
+        #            prompt = meta['long_caption']
+        #        else:
+        #            prompt = meta['text']
+        #        if not prompt:
+        #            continue
+        #        lines4infer.append({
+        #            'prompt': prompt,
+        #            'h_div_w': meta['h_div_w'],
+        #            'infer_type': 'val/laion_coco_long_caption',
+        #            'gt_image_path': gt_image_path,
+        #            'meta_line': line,
+        #        })
 
     if args.fid_max_examples > 0:
         lines4infer = lines4infer[:args.fid_max_examples]
@@ -200,12 +225,17 @@ if __name__ == '__main__':
 
     jsonl_list = []
     cnt = 0
-    for i, infer_data in enumerate(lines4infer):
+    records = {}
+    
+    # Add tqdm progress bar
+    from tqdm import tqdm
+    for i, infer_data in enumerate(tqdm(lines4infer, desc="Processing images", unit="img")):
         try:
+            # import pdb; pdb.set_trace()
             prompt = infer_data['prompt']
             prompt = process_short_text(prompt)
             prompt_id = get_prompt_id(prompt)
-            save_file = osp.join(out_dir, 'pred', f'{prompt_id}.jpg')
+            save_file = osp.join(out_dir, 'pred', f"{infer_data['category']}", f'{prompt_id}.jpg')
             if osp.exists(save_file):
                 continue
 
@@ -220,30 +250,38 @@ if __name__ == '__main__':
 
             img_list = []
             gt_ls_Bl = []
-            if ('gt_image_path' in infer_data):
-                gt_img, recons_img, all_bit_indices = joint_vi_vae_encode_decode(vae, infer_data['gt_image_path'], vae_scale_schedule, device, tgt_h, tgt_w)
-                gt_ls_Bl = all_bit_indices
+            gt_image_path = osp.join(osp.dirname(args.jsonl_filepath), infer_data['category'], f"{infer_data['image_id']}.jpg")
+            #if ('gt_image_path' in infer_data):
+            if osp.exists(gt_image_path):
+                #gt_img, recons_img, all_bit_indices = joint_vi_vae_encode_decode(vae, infer_data['gt_image_path'], vae_scale_schedule, device, tgt_h, tgt_w)
+                # gt_img, recons_img, all_bit_indices = joint_vi_vae_encode_decode(vae, gt_image_path, vae_scale_schedule, device, tgt_h, tgt_w)
+                # gt_ls_Bl = all_bit_indices
+                gt_ls_Bl = None
             else:
                 if args.save4fid_eval:
                     continue
             
             if args.coco30k_prompts or args.save4fid_eval:
-                concate_img = gen_one_img(infinity, vae, text_tokenizer, text_encoder, prompt, g_seed=0, gt_leak=0, gt_ls_Bl=gt_ls_Bl, t5_path=None, tau_list=args.tau, cfg_sc=3, cfg_list=args.cfg, scale_schedule=scale_schedule, cfg_insertion_layer=[args.cfg_insertion_layer], vae_type=args.vae_type, sampling_per_bits=args.sampling_per_bits)
+                concate_img, codes = gen_one_img(infinity, vae, text_tokenizer, text_encoder, prompt, g_seed=0, gt_leak=0, gt_ls_Bl=gt_ls_Bl, tau_list=args.tau, cfg_sc=3, cfg_list=args.cfg, scale_schedule=scale_schedule, cfg_insertion_layer=[args.cfg_insertion_layer], vae_type=args.vae_type, si_para = args.si_para, ratio_list = ratio_list, kv_opt = args.kv_opt, sampling_per_bits=args.sampling_per_bits)
+                if records.get(infer_data['category'], None) is None:
+                    records[infer_data['category']] = [(prompt_id, codes)]
+                elif len(records[infer_data['category']]) < 100:
+                    records[infer_data['category']].append((prompt_id, codes))
             else:
                 g_seed = 0 if args.n_samples == 1 else None
                 tmp_img_list = []
                 for _ in range(args.n_samples):
-                    tmp_img_list.append(gen_one_img(infinity, vae, text_tokenizer, text_encoder, prompt, g_seed=g_seed, gt_leak=0, gt_ls_Bl=gt_ls_Bl, t5_path=None, tau_list=args.tau, cfg_sc=3, cfg_list=args.cfg, scale_schedule=scale_schedule, cfg_insertion_layer=[args.cfg_insertion_layer], vae_type=args.vae_type, sampling_per_bits=1, top_k=0))
+                    tmp_img_list.append(gen_one_img(infinity, vae, text_tokenizer, text_encoder, prompt, g_seed=g_seed, gt_leak=0, gt_ls_Bl=gt_ls_Bl, t5_path=None, tau_list=args.tau, cfg_sc=3, cfg_list=args.cfg, scale_schedule=scale_schedule, cfg_insertion_layer=[args.cfg_insertion_layer], vae_type=args.vae_type, si_para = args.si_para, ratio_list = ratio_list, kv_opt = args.kv_opt, sampling_per_bits=1, top_k=0))
                 img_list.append(np.concatenate(tmp_img_list, axis=1))
 
                 tmp_img_list = []
                 for _ in range(args.n_samples):
-                    tmp_img_list.append(gen_one_img(infinity, vae, text_tokenizer, text_encoder, prompt, g_seed=g_seed, gt_leak=0, gt_ls_Bl=gt_ls_Bl, t5_path=None, tau_list=args.tau, cfg_sc=3, cfg_list=args.cfg, scale_schedule=scale_schedule, cfg_insertion_layer=[args.cfg_insertion_layer], vae_type=args.vae_type, sampling_per_bits=8, top_k=0))
+                    tmp_img_list.append(gen_one_img(infinity, vae, text_tokenizer, text_encoder, prompt, g_seed=g_seed, gt_leak=0, gt_ls_Bl=gt_ls_Bl, t5_path=None, tau_list=args.tau, cfg_sc=3, cfg_list=args.cfg, scale_schedule=scale_schedule, cfg_insertion_layer=[args.cfg_insertion_layer], vae_type=args.vae_type, si_para = args.si_para, ratio_list = ratio_list, kv_opt = args.kv_opt, sampling_per_bits=8, top_k=0))
                 img_list.append(np.concatenate(tmp_img_list, axis=1))
 
                 tmp_img_list = []
                 for _ in range(args.n_samples):
-                    tmp_img_list.append(gen_one_img(infinity, vae, text_tokenizer, text_encoder, prompt, g_seed=g_seed, gt_leak=0, gt_ls_Bl=gt_ls_Bl, t5_path=None, tau_list=args.tau, cfg_sc=3, cfg_list=args.cfg, scale_schedule=scale_schedule, cfg_insertion_layer=[args.cfg_insertion_layer], vae_type=args.vae_type, sampling_per_bits=16, top_k=0))
+                    tmp_img_list.append(gen_one_img(infinity, vae, text_tokenizer, text_encoder, prompt, g_seed=g_seed, gt_leak=0, gt_ls_Bl=gt_ls_Bl, t5_path=None, tau_list=args.tau, cfg_sc=3, cfg_list=args.cfg, scale_schedule=scale_schedule, cfg_insertion_layer=[args.cfg_insertion_layer], vae_type=args.vae_type, si_para = args.si_para, ratio_list = ratio_list, kv_opt = args.kv_opt, sampling_per_bits=16, top_k=0))
                 img_list.append(np.concatenate(tmp_img_list, axis=1))
                 
                 if args.n_samples == 1:
@@ -257,21 +295,31 @@ if __name__ == '__main__':
             infer_data['image_path'] = osp.abspath(save_file)
 
             if args.save4fid_eval:
-                save_file = osp.join(out_dir, 'gt', f'{prompt_id}.jpg')
-                os.makedirs(osp.dirname(save_file), exist_ok=True)
-                gt_img = Image.fromarray(np.array(gt_img))
-                assert not osp.exists(save_file), f'{save_file} exists, infer_data: {infer_data}'
-                gt_img.save(save_file)
-                if args.save_recons_img:
-                    save_file = osp.join(out_dir, 'recons', f'{prompt_id}.jpg')
-                    os.makedirs(osp.dirname(save_file), exist_ok=True)
-                    recons_img = Image.fromarray(np.array(recons_img))
-                    recons_img.save(save_file)
+                pass
+                # save_file = osp.join(out_dir, 'gt', f'{prompt_id}.jpg')
+                # os.makedirs(osp.dirname(save_file), exist_ok=True)
+                # gt_img = Image.fromarray(np.array(gt_img))
+                # assert not osp.exists(save_file), f'{save_file} exists, infer_data: {infer_data}'
+                # # gt_img.save(save_file)
+                # if args.save_recons_img:
+                #     save_file = osp.join(out_dir, 'recons', f'{prompt_id}.jpg')
+                #     os.makedirs(osp.dirname(save_file), exist_ok=True)
+                #     recons_img = Image.fromarray(np.array(recons_img))
+                #     recons_img.save(save_file)
 
             jsonl_list.append(json.dumps(infer_data)+'\n')
-            jsonl_file = osp.join(out_dir, 'meta_info.jsonl')
-            with open(jsonl_file, 'w') as f:
-                f.writelines(jsonl_list)
-            print(f'Save to {osp.abspath(jsonl_file)}')
+            #print(f'Save to {osp.abspath(jsonl_file)}')
         except Exception as e:
             print(f"{e}", traceback.print_exc())
+    
+    jsonl_file = osp.join(out_dir, 'meta_info.jsonl')
+    with open(jsonl_file, 'w') as f:
+        f.writelines(jsonl_list)
+
+    import pickle
+    for cat, record in records.items():
+        print(cat, len(record), record[0][0])
+        save_file = osp.join(out_dir, 'pred', f"{cat}.pkl")
+        with open(f'{save_file}', 'wb') as f:
+            pickle.dump(record, f)
+
