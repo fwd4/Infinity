@@ -1,4 +1,5 @@
 #!/bin/bash
+pip config set global.index-url https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple
 
 infer_eval_image_reward() {
     ${pip_ext} install image-reward pytorch_lightning
@@ -189,7 +190,7 @@ checkpoint_type='torch'
 infinity_model_path=weights/infinity_2b_reg.pth
 out_dir_root=output/infinity_2b_evaluation
 vae_type=32
-vae_path=weights/infinity_vae_d32_reg.pth
+vae_path=weights/infinity_vae_d32reg.pth
 cfg=4
 tau=1
 rope2d_normalized_by_hw=2
@@ -210,9 +211,10 @@ out_dir=${out_dir_root}/hpsv21_${sub_fix}
 # infer_eval_hpsv21
 
 # GenEval
-rewrite_prompt=1
+rewrite_prompt=0
 out_dir=${out_dir_root}/gen_eval_${sub_fix}_rewrite_prompt${rewrite_prompt}_round2_real_rewrite
 test_gen_eval
+exit 0
 
 # long caption fid
 long_caption_fid=1

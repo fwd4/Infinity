@@ -106,6 +106,7 @@ class FlexAttn(nn.Module):
             self.block_mask = create_block_mask(self.mask_mod, B = B, H = H, Q_LEN = L, KV_LEN = L, device = 'cuda', _compile = True)
         elif mask_type == 'var_infer_mask_with_kv_cache':
             self.mask_mod = _generate_var_infer_mask_with_kv_cache(self.lengths)
+            # print(B, H, L, sum(self.lengths))
             self.block_mask = create_block_mask(self.mask_mod, B = B, H = H, Q_LEN = L, KV_LEN = L, device = 'cuda', _compile = True)
         else:
             raise NotImplementedError(f"{mask_type} not supportted in FlexAttn, support type:{self.support_mask_type}")

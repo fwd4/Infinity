@@ -91,6 +91,7 @@ if __name__ == '__main__':
                 prompt = input_key_val['prompt']
                 prompt_rewrite_cache[prompt] = prompt
             print(f'old_prompt: {old_prompt}, refined_prompt: {prompt}')
+        print("============wttttffffff=============")
             
         images = []
         for sample_j in range(args.n_samples):

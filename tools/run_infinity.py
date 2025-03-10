@@ -20,7 +20,7 @@ from PIL import Image, ImageEnhance
 import torch.nn.functional as F
 from torch.cuda.amp import autocast
 
-from infinity.models.infinity import Infinity
+from infinity.models.infinity import Infinity, get_torch_mem_usage#, ATTN_TIME
 from infinity.models.basic import *
 import PIL.Image as PImage
 from torchvision.transforms.functional import to_tensor
@@ -97,6 +97,7 @@ def gen_one_img(
     g_seed=None,
     sampling_per_bits=1,
     enable_positive_prompt=0,
+    verbose=False,
 ):
     sstt = time.time()
     if not isinstance(cfg_list, list):
@@ -123,6 +124,7 @@ def gen_one_img(
             ret_img=True, trunk_scale=1000,
             gt_leak=gt_leak, gt_ls_Bl=gt_ls_Bl, inference_mode=True,
             sampling_per_bits=sampling_per_bits,
+            verbose=verbose,
         )
     print(f"cost: {time.time() - sstt}, infinity cost={time.time() - stt}")
     img = img_list[0]

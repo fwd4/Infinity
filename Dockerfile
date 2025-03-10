@@ -19,7 +19,7 @@ COPY requirements.txt /workspace/requirements.txt
 
 RUN pip install --upgrade pip \
     && pip install ninja \
-    && MAX_JOBS=1 pip install flash-attn --no-build-isolation \
+    && MAX_JOBS=8 pip install flash-attn --no-build-isolation \
     && pip install -r requirements.txt \
     && pip install opencv-fixer==0.2.5 \
     && python -c "from opencv_fixer import AutoFix; AutoFix()"
