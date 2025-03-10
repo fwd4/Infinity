@@ -9,7 +9,6 @@ pandas
 timm==0.9.6
 decord
 transformers
-torch==2.5.1
 pytz
 pandas
 wandb

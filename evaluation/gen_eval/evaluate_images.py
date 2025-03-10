@@ -267,7 +267,6 @@ def main(args):
         pbar.update(1)
         folderpath = os.path.join(args.imagedir, subfolder)
         if not os.path.isdir(folderpath) or not subfolder.isdigit():
-            print('skip 269')
             continue
         with open(os.path.join(folderpath, "metadata.jsonl")) as fp:
             metadata = json.load(fp)

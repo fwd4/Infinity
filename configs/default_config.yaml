@@ -1,0 +1,65 @@
+# 模型和系统参数
+init_args:
+  pn: '1M'
+  root_folder: '/workspace/Infinity'
+  model_path: 'weights/infinity_2b_reg.pth'
+  vae_path: 'weights/infinity_vae_d32reg.pth'
+  text_encoder_ckpt: 'weights/flan-t5-xl'
+  add_lvl_embeding_only_first_block: 1
+  use_bit_label: 1
+  model_type: 'infinity_2b'
+  rope2d_each_sa_layer: 1
+  rope2d_normalized_by_hw: 2
+  use_scale_schedule_embedding: 0
+  sampling_per_bits: 1
+  text_channels: 2048
+  apply_spatial_patchify: 0
+  h_div_w_template: 1.000
+  use_flex_attn: 0
+  cache_dir: '/dev/shm'
+  checkpoint_type: 'torch'
+  seed: 0
+  bf16: 1
+  save_file: 'tmp.jpg'
+  enable_model_cache: 0
+  vae_type: 32
+
+# 图像生成参数
+gen_kwargs:
+  cfg_insertion_layer: [0]
+  gt_leak: 0
+  gt_ls_Bl: null
+  cfg_list: 4
+  tau_list: 1
+  enable_positive_prompt: 0
+  verbose: false
+  h_div_w: 1.0
+  top_k: 900
+  vae_type: 32
+  top_p: 0.97
+  cfg_sc: 3
+  cfg_exp_k: 0.0
+  gumbel: 0
+  softmax_merge_topk: -1
+  g_seed: 42
+  sampling_per_bits: 1
+  kv_opt: 0
+  prune_inputs: false
+  si_para: 12
+  ratio_list: []
+
+# 提示词
+prompts:
+  vintage_insect: "Insect made from vintage 1960s electronic components, capacitors, resistors, transistors, wires, diodes, solder, circuitboard."
+  macro_closeup: "Denis Villeneuve's extreme macro cinematographic close-up in water."
+  3d_school: "A creative 3D image to be placed at the bottom of a mobile application's homepage, depicting a miniature school and children carrying backpacks."
+  explore_more: "Create an image with 'Explore More' in an adventurous font over a picturesque hiking trail."
+  toy_car: "Close-up shot of a diecast toy car, diorama, night, lights from windows, bokeh, snow."
+  fairy_house: "House: white; pink tinted windows; surrounded by flowers; cute; scenic; garden; fairy-like; epic; photography; photorealistic; insanely detailed and intricate; textures; grain; ultra-realistic."
+  cat_fashion: "Hyperrealistic black and white photography of cats fashion show in style of Helmut Newton."
+  spacefrog_astroduck: "Two superheroes called Spacefrog (a dashing green cartoon-like frog with a red cape) and Astroduck (a yellow fuzzy duck, part-robot, with blue/grey armor), near a garden pond, next to their spaceship, a classic flying saucer, called the Tadpole 3000. Photorealistic."
+  miniature_village: "An enchanted miniature village bustling with activity, featuring tiny houses, markets, and residents."
+  corgi_dog: "A close-up photograph of a Corgi dog. The dog is wearing a black hat and round, dark sunglasses. The Corgi has a joyful expression, with its mouth open and tongue sticking out, giving an impression of happiness or excitement."
+  robot_eggplant: "a robot holding a huge eggplant, sunny nature background"
+  perfume_product: "Product photography, a perfume placed on a white marble table with pineapple, coconut, lime next to it as decoration, white curtains, full of intricate details, realistic, minimalist, layered gestures in a bright and concise atmosphere, minimalist style."
+  mountain_landscape: "The image presents a picturesque mountainous landscape under a cloudy sky. The mountains, blanketed in lush greenery, rise majestically, their slopes dotted with clusters of trees and shrubs. The sky above is a canvas of blue, adorned with fluffy white clouds that add a sense of tranquility to the scene. In the foreground, a valley unfolds, nestled between the towering mountains. It appears to be a rural area, with a few buildings and structures visible, suggesting the presence of a small settlement. The buildings are scattered, blending harmoniously with the natural surroundings. The image is captured from a high vantage point, providing a sweeping view of the valley and the mountains."

@@ -49,7 +49,7 @@ except ImportError:
     def tqdm(x):
         return x
 
-# from pytorch_fid.inception import InceptionV3
+from pytorch_fid.inception import InceptionV3
 
 parser = ArgumentParser(formatter_class=ArgumentDefaultsHelpFormatter)
 parser.add_argument('--batch-size', type=int, default=50,
@@ -61,10 +61,10 @@ parser.add_argument('--num-workers', type=int,
                           'Defaults to `min(8, num_cpus)`'))
 parser.add_argument('--device', type=str, default=None,
                     help='Device to use. Like cuda, cuda:0 or cpu')
-# parser.add_argument('--dims', type=int, default=2048,
-#                     choices=list(InceptionV3.BLOCK_INDEX_BY_DIM),
-                    # help=('Dimensionality of Inception features to use. '
-                        #   'By default, uses pool3 features'))
+parser.add_argument('--dims', type=int, default=2048,
+                    choices=list(InceptionV3.BLOCK_INDEX_BY_DIM),
+                    help=('Dimensionality of Inception features to use. '
+                           'By default, uses pool3 features'))
 parser.add_argument('--save-stats', action='store_true',
                     help=('Generate an npz archive from a directory of samples. '
                           'The first path is used as input and the second as output.'))
@@ -247,12 +247,21 @@ def compute_statistics_of_path(path, model, batch_size, dims, device, max_sample
             m, s = f['mu'][:], f['sigma'][:]
     else:
         path = pathlib.Path(path)
-        files = sorted([file for ext in IMAGE_EXTENSIONS
-                       for file in path.glob('*.{}'.format(ext))])
+        # Modified to include subfolders recursively
+        files = []
+        for ext in IMAGE_EXTENSIONS:
+            # Get files in current directory
+            files.extend(sorted(path.glob(f'*.{ext}')))
+            # Get files in all subdirectories recursively
+            files.extend(sorted(path.glob(f'**/*.{ext}')))
+        
+        # Remove duplicates that might occur from the two glob patterns
+        files = sorted(set(files))
+        
         if len(files) > max_samples:
-            print(f'Restrict to {len(files)} to {max_samples} images')
+            print(f'Restricting from {len(files)} to {max_samples} images')
             files = files[:max_samples]
-        print(f'{path} has {len(files)} images')
+        print(f'{path} has {len(files)} images (including subfolders)')
         m, s = calculate_activation_statistics(files, model, batch_size,
                                                dims, device, num_workers)
 

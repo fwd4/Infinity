@@ -1,0 +1,26 @@
+services:
+  infinity:
+    image: infi
+    build:
+      context: .
+      network: host
+    shm_size: '2gb'
+    volumes:
+    - /data/huggingface:/root/.cache/huggingface
+    - /home/lianghao/workspace/Infinity:/workspace/Infinity
+    command: bash
+    stdin_open: true
+    tty: true
+    network_mode: "host"
+    working_dir: /workspace/Infinity
+    environment:
+      HF_ENDPOINT: "https://hf-mirror.com"
+      PYTHONPATH: "/workspace/Infinity"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+

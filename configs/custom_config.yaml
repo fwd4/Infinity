@@ -1,0 +1,11 @@
+# 这个文件用于覆盖默认配置
+# 只需要包含要修改的参数
+
+# 修改模型参数
+init_args:
+  root_folder: '/workspace/Infinity'
+
+gen_kwargs:
+  prune_inputs: true
+  si_para: 9
+  ratio_list: [50, 15, 5]
