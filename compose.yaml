@@ -1,17 +1,21 @@
-version: '3'
 services:
   infinity:
     image: infi
+    build:
+      context: .
+      network: host
     volumes:
-    - /home/change/.cache/huggingface:/root/huggingface
-    - /home/change/workspace:/workspace
+    - /data/huggingface:/root/huggingface
+    - /home/ubuntu/hao.liang/Infinity:/workspace/Infinity
     command: bash
     stdin_open: true
     tty: true
+    network_mode: "host"
     deploy:
       resources:
         reservations:
           devices:
             - driver: nvidia
-              count: 1
+              count: all
               capabilities: [gpu]
+
