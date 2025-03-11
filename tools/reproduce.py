@@ -30,7 +30,7 @@ args = argparse.Namespace(
     text_channels=2048,
     apply_spatial_patchify=0,
     h_div_w_template=1.000,
-    use_flex_attn=0,
+    use_flex_attn=1,
     cache_dir='/dev/shm',
     checkpoint_type='torch',
     seed=0,
@@ -100,10 +100,10 @@ for category, prompt in prompts.items():
         enable_positive_prompt=enable_positive_prompt,
         verbose=False,
     )
-    exit(0)
-    img_cnt+=1
-    if img_cnt == 2:
-        exit(0)
+    # exit(0)
+    # img_cnt+=1
+    # if img_cnt == 2:
+    #     exit(0)
 
     # SAVE
     save_path = osp.join(output_dir, f"re_{category}_test.jpg")
