@@ -6,7 +6,7 @@ services:
       network: host
     volumes:
     - /data/huggingface:/root/huggingface
-    - /home/ubuntu/hao.liang/Infinity:/workspace/Infinity
+    - /home/lianghao/workspace/Infinity:/workspace/Infinity
     command: bash
     stdin_open: true
     tty: true

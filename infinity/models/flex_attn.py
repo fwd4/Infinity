@@ -7,7 +7,7 @@ import numpy as np
 import torch.nn as nn
 import torch.nn.functional as F
 try:
-    from torch.nn.attention.flex_attention import flex_attention, create_block_mask
+    from torch.nn.attention.flex_attention import flex_attention, create_block_mask, and_masks, or_masks
     flex_attention_available = True
 except ImportError:
     print(f"[Warning] flex attention need pytorch 2.5.0+ but your version is {torch.__version__}")
@@ -69,6 +69,45 @@ def _generate_var_infer_mask_with_kv_cache(lengths):
 
     return var_mask_mod
 
+pix = [1, 2, 4, 6, 8, 12, 16, 20, 24, 32, 40, 48, 64]
+row_aff = [p // 4 for p in pix]
+qlen_raw = [x*x for x in pix]
+qlen = torch.tensor(np.cumsum(qlen_raw), device='cuda')
+print(qlen)
+
+def per_scale_score_mod1(b, h, q_idx, kv_idx):
+    return (q_idx - (kv_idx - qlen[-2])) <= 8*pix[-1]
+
+def per_scale_score_mod2(b, h, q_idx, kv_idx):
+    return ((kv_idx - qlen[-2]) - q_idx) <= 8*pix[-1]
+
+def per_scale_score_mod4(b, h, q_idx, kv_idx):
+    return (q_idx * 48 // 64 - (kv_idx - qlen[-3])) <= 6*pix[-3]
+
+def per_scale_score_mod5(b, h, q_idx, kv_idx):
+    return (- q_idx * 48 // 64 + (kv_idx - qlen[-3])) <= 6*pix[-3]
+
+def per_scale_score_mod6(b, h, q_idx, kv_idx):
+    return (q_idx * 40 // 64 - (kv_idx - qlen[-4])) <= 5*pix[-4]
+
+def per_scale_score_mod7(b, h, q_idx, kv_idx):
+    return (- q_idx * 40 // 64 + (kv_idx - qlen[-4])) <= 5*pix[-4]
+
+def per_scale_score_mod8(b, h, q_idx, kv_idx):
+    return (q_idx * 32 // 64 - (kv_idx - qlen[-5])) <= 4*pix[-5]
+
+def per_scale_score_mod9(b, h, q_idx, kv_idx):
+    return (- q_idx * 32 // 64 + (kv_idx - qlen[-5])) <= 4*pix[-5]
+
+def per_scale_score_mod3(b, h, q_idx, kv_idx):
+    return kv_idx <= qlen[-5]
+    
+stage13_mod = and_masks(per_scale_score_mod1, per_scale_score_mod2) # 64x64
+stage12_mod = and_masks(per_scale_score_mod4, per_scale_score_mod5) # 48x48
+stage11_mod = and_masks(per_scale_score_mod6, per_scale_score_mod7) # 40x40
+stage10_mod = and_masks(per_scale_score_mod8, per_scale_score_mod9) # 32x32
+infi_mask = or_masks(stage10_mod, stage11_mod, stage12_mod, stage13_mod, per_scale_score_mod3)
+
 class FlexAttn(nn.Module):
     def __init__(
             self, block_scales:list, mask_type:str, B, H, L:int, auto_padding=False
@@ -106,8 +145,10 @@ class FlexAttn(nn.Module):
             self.block_mask = create_block_mask(self.mask_mod, B = B, H = H, Q_LEN = L, KV_LEN = L, device = 'cuda', _compile = True)
         elif mask_type == 'var_infer_mask_with_kv_cache':
             self.mask_mod = _generate_var_infer_mask_with_kv_cache(self.lengths)
-            # print(B, H, L, sum(self.lengths))
-            self.block_mask = create_block_mask(self.mask_mod, B = B, H = H, Q_LEN = L, KV_LEN = L, device = 'cuda', _compile = True)
+            print(B, H, L, self.lengths[-2:])
+            pad_q = ((self.lengths[-1] + 127) // 128) * 128
+            mask = and_masks(infi_mask, self.mask_mod)
+            self.block_mask = create_block_mask(mask, B = 1, H = 1, Q_LEN = pad_q, KV_LEN = L, device = 'cuda', _compile = True)
         else:
             raise NotImplementedError(f"{mask_type} not supportted in FlexAttn, support type:{self.support_mask_type}")
 
