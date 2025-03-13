@@ -7,13 +7,14 @@ import argparse
 import numpy as np
 import ImageReward as RM
 
+HF_IMAGE_REWARD="/root/huggingface/hub/models--THUDM--ImageReward/snapshots/5736be03b2652728fb87788c9797b0570450ab72"
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("--meta_file", type=str, default="")
     args = parser.parse_args()
 
-    image_reward_model = RM.load("ImageReward-v1.0")
+    image_reward_model = RM.load(f"{HF_IMAGE_REWARD}/ImageReward.pt", med_config=f"{HF_IMAGE_REWARD}/med_config.json")
     clip_model = RM.load_score("CLIP")
 
     with open(args.meta_file, 'r') as f:

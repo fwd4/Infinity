@@ -26,6 +26,8 @@ import PIL.Image as PImage
 from torchvision.transforms.functional import to_tensor
 from infinity.utils.dynamic_resolution import dynamic_resolution_h_w, h_div_w_templates
 
+from torch.profiler import profile, schedule, tensorboard_trace_handler, ProfilerActivity
+trace_handler = tensorboard_trace_handler(dir_name=f"outputs/profile", use_gzip=False)
 
 def extract_key_val(text):
     pattern = r'<(.+?):(.+?)>'
@@ -110,6 +112,15 @@ def gen_one_img(
     else:
         negative_label_B_or_BLT = None
     print(f'cfg: {cfg_list}, tau: {tau_list}')
+    # with profile(
+    #   #activities = [ProfilerActivity.CPU, ProfilerActivity.CUDA],
+    #   #activities = [ProfilerActivity.CUDA],
+    #   # schedule = tracing_schedule,
+    #   on_trace_ready = trace_handler,
+    #   profile_memory = True,
+    #   record_shapes = True,
+    #   with_stack = True
+    # ) as prof:
     with torch.cuda.amp.autocast(enabled=True, dtype=torch.bfloat16, cache_enabled=True):
         stt = time.time()
         _, _, img_list = infinity_test.autoregressive_infer_cfg(
@@ -172,7 +183,7 @@ def load_infinity(
     model_kwargs=None,
     text_channels=2048,
     apply_spatial_patchify=0,
-    use_flex_attn=False,
+    use_flex_attn=True,
     bf16=False,
     checkpoint_type='torch',
 ):

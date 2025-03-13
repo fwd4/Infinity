@@ -1,11 +1,12 @@
 #!/bin/bash
-pip config set global.index-url https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple
+export HF_HOME=/root/huggingface
+export HF_ENDPOINT=https://hf-mirror.com
 
 infer_eval_image_reward() {
-    ${pip_ext} install image-reward pytorch_lightning
-    ${pip_ext} install -U timm diffusers
-    ${pip_ext} install openai==1.34.0 
-    ${pip_ext} install httpx==0.20.0 
+    # ${pip_ext} install image-reward pytorch_lightning
+    # ${pip_ext} install -U timm diffusers
+    # ${pip_ext} install openai==1.34.0 
+    # ${pip_ext} install httpx==0.20.0 
 
     # step 1, infer images
     ${python_ext} evaluation/image_reward/infer4eval.py \
@@ -31,18 +32,19 @@ infer_eval_image_reward() {
     --outdir  ${out_dir}
 
     # step 2, compute image reward
-    ${pip_ext} install diffusers==0.16.0
-    ${pip_ext} install git+https://github.com/openai/CLIP.git ftfy
+    # ${pip_ext} install diffusers==0.16.0
+    # ${pip_ext} install git+ssh://git@github.com/openai/CLIP.git ftfy
     ${python_ext} evaluation/image_reward/cal_imagereward.py \
     --meta_file ${out_dir}/metadata.jsonl
 }
 
 infer_eval_hpsv21() {
-    ${pip_ext} install hpsv2
-    ${pip_ext}install -U diffusers
-    sudo apt install python3-tk
-    wget https://dl.fbaipublicfiles.com/mmf/clip/bpe_simple_vocab_16e6.txt.gz
-    mv bpe_simple_vocab_16e6.txt.gz /home/tiger/.local/lib/python3.9/site-packages/hpsv2/src/open_clip
+    # ${pip_ext} install hpsv2
+    # ${pip_ext} install -U diffusers
+    # apt install python3-tk wget -y
+    # wget https://dl.fbaipublicfiles.com/mmf/clip/bpe_simple_vocab_16e6.txt.gz
+    # PYSITE="/usr/local/lib/python3.10/dist-packages"
+    # mv bpe_simple_vocab_16e6.txt.gz $PYSITE/hpsv2/src/open_clip
 
     mkdir -p ${out_dir}
     ${python_ext} evaluation/hpsv2/eval_hpsv2.py \
@@ -69,13 +71,13 @@ infer_eval_hpsv21() {
 }
 
 test_gen_eval() {
-    ${pip_ext} install -U openmim
-    mim install mmengine mmcv-full==1.7.2
-    ${pip_ext} install mmdet==2.28.2 pytorch_lightning clip_benchmark open-clip-torch==2.20.0
-    ${pip_ext} install -U diffusers
-    sudo apt install libgl1
-    ${pip_ext} install openai
-    ${pip_ext} install httpx==0.20.0
+    # ${pip_ext} install -U openmim
+    # mim install mmengine mmcv-full==1.7.2
+    # ${pip_ext} install mmdet==2.28.2 pytorch_lightning clip_benchmark open-clip-torch==2.20.0
+    # ${pip_ext} install -U diffusers
+    # sudo apt install libgl1
+    # ${pip_ext} install openai
+    # ${pip_ext} install httpx==0.20.0
 
     # run inference
     ${python_ext} evaluation/gen_eval/infer4eval.py \
@@ -202,30 +204,51 @@ apply_spatial_patchify=0
 cfg_insertion_layer=0
 sub_fix=cfg${cfg}_tau${tau}_cfg_insertion_layer${cfg_insertion_layer}
 
-# ImageReward
-out_dir=${out_dir_root}/image_reward_${sub_fix}
-# infer_eval_image_reward
 
-# HPS v2.1
-out_dir=${out_dir_root}/hpsv21_${sub_fix}
-# infer_eval_hpsv21
+# 参数校验
+if [ $# -eq 0 ]; then
+    echo "Usage: $0 [task_name]"
+    echo "Available tasks:"
+    echo "  image_reward, hpsv21, gen_eval, long_caption_fid, val_loss"
+    exit 1
+fi
 
-# GenEval
-rewrite_prompt=0
-out_dir=${out_dir_root}/gen_eval_${sub_fix}_rewrite_prompt${rewrite_prompt}_round2_real_rewrite
-test_gen_eval
-exit 0
+task=$1
 
-# long caption fid
-long_caption_fid=1
-jsonl_filepath='[YOUR VAL JSONL FILEPATH]'
-out_dir=${out_dir_root}/val_long_caption_fid_${sub_fix}
-rm -rf ${out_dir}
-# test_fid
+case $task in
+    image_reward)
+        out_dir="${out_dir_root}/image_reward_${sub_fix}"
+        infer_eval_image_reward
+        ;;
+    hpsv21)
+        out_dir="${out_dir_root}/hpsv21_${sub_fix}"
+        infer_eval_hpsv21
+        ;;
+    gen_eval)
+        rewrite_prompt=1
+        out_dir="${out_dir_root}/gen_eval_${sub_fix}_rewrite_prompt${rewrite_prompt}_round2_real_rewrite"
+        test_gen_eval
+        ;;
+    long_caption_fid)
+        long_caption_fid=1
+        jsonl_filepath='[YOUR VAL JSONL FILEPATH]'
+        out_dir="${out_dir_root}/val_long_caption_fid_${sub_fix}_rewrite_prompt${rewrite_prompt}"
+        rm -rf "${out_dir}"
+        test_fid
+        ;;
+    val_loss)
+        out_dir="${out_dir_root}/val_loss_${sub_fix}_rewrite_prompt${rewrite_prompt}"
+        reweight_loss_by_scale=0
+        jsonl_folder='[YOUR VAL JSONL FILEPATH]'
+        noise_apply_strength=0.2
+        test_val_loss
+        ;;
+    *)
+        echo "Error: Unknown task '$task'"
+        echo "Available tasks:"
+        echo "  image_reward, hpsv21, gen_eval, long_caption_fid, val_loss"
+        exit 1
+        ;;
+esac
 
-# test val loss
-out_dir=${out_dir_root}/val_loss_${sub_fix}
-reweight_loss_by_scale=0
-jsonl_folder='[YOUR VAL JSONL FILEPATH]'
-noise_apply_strength=0.2
-# test_val_loss
+echo "Task [$task] executed successfully"

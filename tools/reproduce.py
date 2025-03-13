@@ -62,6 +62,8 @@ prompts = {
     "robot_eggplant": "a robot holding a huge eggplant, sunny nature background",
     "perfume_product": "Product photography, a perfume placed on a white marble table with pineapple, coconut, lime next to it as decoration, white curtains, full of intricate details, realistic, minimalist, layered gestures in a bright and concise atmosphere, minimalist style.",
     "mountain_landscape": "The image presents a picturesque mountainous landscape under a cloudy sky. The mountains, blanketed in lush greenery, rise majestically, their slopes dotted with clusters of trees and shrubs. The sky above is a canvas of blue, adorned with fluffy white clouds that add a sense of tranquility to the scene. In the foreground, a valley unfolds, nestled between the towering mountains. It appears to be a rural area, with a few buildings and structures visible, suggesting the presence of a small settlement. The buildings are scattered, blending harmoniously with the natural surroundings. The image is captured from a high vantage point, providing a sweeping view of the valley and the mountains."
+    # "prompt_raw": "a Chinese model sits in the train. Magazine style",
+    # "prompt_refine": "A Chinese model sits elegantly in a modern train compartment, dressed in a chic, high-fashion outfit, holding a glossy magazine. The train interior is sleek and minimalist, with large windows showcasing a blurred cityscape rushing by. The lighting is soft and professional, highlighting the model's poised expression and stylish attire. The scene exudes sophistication and urban elegance, perfect for a magazine cover."
 }
 
 # OUTPUT

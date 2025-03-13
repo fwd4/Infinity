@@ -87,11 +87,13 @@ if __name__ == '__main__':
                 prompt = prompt_rewrite_cache[prompt]
             else:
                 refined_prompt = prompt_rewriter.rewrite(prompt)
-                input_key_val = extract_key_val(refined_prompt)
-                prompt = input_key_val['prompt']
-                prompt_rewrite_cache[prompt] = prompt
-            print(f'old_prompt: {old_prompt}, refined_prompt: {prompt}')
-        print("============wttttffffff=============")
+                #refined_prompt = "<prompt:Generate an image with the text 'Never Stop Learning' in chalkboard style.><cfg:3>"
+                # print(refined_prompt)
+                # input_key_val = extract_key_val(refined_prompt)
+                # prompt = input_key_val['prompt']
+                prompt_rewrite_cache[prompt] = refined_prompt
+                prompt = refined_prompt
+            print(f'old_prompt    : {old_prompt}\nrefined_prompt: {prompt}')
             
         images = []
         for sample_j in range(args.n_samples):

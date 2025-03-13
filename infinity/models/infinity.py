@@ -35,9 +35,7 @@ except:
 
 # ATTN_TIME=[]
 
-from torch.profiler import profile, schedule, tensorboard_trace_handler, ProfilerActivity
 
-trace_handler = tensorboard_trace_handler(dir_name=f"outputs/profile", use_gzip=False)
 
 class MultiInpIdentity(nn.Module):
     def forward(self, x, *args, **kwargs):
@@ -580,15 +578,7 @@ class Infinity(nn.Module):
             # layer_time = []
             #print(self.block_chunks)
 
-            # with profile(
-            #   #activities = [ProfilerActivity.CPU, ProfilerActivity.CUDA],
-            #   #activities = [ProfilerActivity.CUDA],
-            #   # schedule = tracing_schedule,
-            #   on_trace_ready = trace_handler,
-            #   profile_memory = True,
-            #   record_shapes = True,
-            #   with_stack = True
-            # ) as prof:
+
             for block_idx, b in enumerate(self.block_chunks):
                 # ttt0 = time.time() * 1e3
                 # last_stage shape: [4, 1, 2048], cond_BD_or_gss.shape: [4, 1, 6, 2048], ca_kv[0].shape: [64, 2048], ca_kv[1].shape [5], ca_kv[2]: int
