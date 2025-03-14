@@ -30,7 +30,7 @@ args = argparse.Namespace(
     text_channels=2048,
     apply_spatial_patchify=0,
     h_div_w_template=1.000,
-    use_flex_attn=0,
+    use_flex_attn=1,
     cache_dir='/dev/shm',
     checkpoint_type='torch',
     seed=0,
@@ -45,7 +45,6 @@ get_torch_mem_usage()
 vae = load_visual_tokenizer(args)
 get_torch_mem_usage()
 infinity = load_transformer(vae, args)
-get_torch_mem_usage()
 
 # PROMPT
 prompts = {

@@ -315,6 +315,8 @@ class SelfAttention(nn.Module):
             if self.cached_k is None: 
                 self.cached_k = k; self.cached_v = v
                 #self.cached_k_ = k_; self.cached_v_ = v_
+            elif self.cached_k.shape[L_dim] >= 921:
+                k = torch.cat((self.cached_k, k), dim=L_dim); v = torch.cat((self.cached_v, v), dim=L_dim)
             else: 
                 k = self.cached_k = torch.cat((self.cached_k, k), dim=L_dim); v = self.cached_v = torch.cat((self.cached_v, v), dim=L_dim)
                 #k_ = self.cached_k_ = torch.cat((self.cached_k_, k_), dim=1); v_ = self.cached_v_ = torch.cat((self.cached_v_, v_), dim=1)

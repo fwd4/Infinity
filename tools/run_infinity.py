@@ -123,6 +123,7 @@ def gen_one_img(
     #   record_shapes = True,
     #   with_stack = True
     # ) as prof, torch.cuda.amp.autocast(enabled=True, dtype=torch.bfloat16, cache_enabled=True):
+    get_torch_mem_usage()
     with torch.cuda.amp.autocast(enabled=True, dtype=torch.bfloat16, cache_enabled=True):
         stt = time.time()
         _, _, img_list = infinity_test.autoregressive_infer_cfg(
@@ -142,6 +143,7 @@ def gen_one_img(
     end = time.time()
     COST.append(end - sstt)
     INFI_COST.append(end - stt)
+    get_torch_mem_usage()
     img = img_list[0]
     return img
 

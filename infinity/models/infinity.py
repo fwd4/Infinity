@@ -666,6 +666,7 @@ class Infinity(nn.Module):
 
             t3 = time.time() * 1e3
             print(f"stage {si}, {pn}, {t1 - t0:.2f}ms, {t2 - t1:.2f}ms, {t3 - t2:.2f}ms")
+            get_torch_mem_usage()
         # tt2 = time.time() * 1e3
 
         if inference_mode:

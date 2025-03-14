@@ -109,6 +109,19 @@ def infi_mask(lengths):
     return stage_masks
     #return or_masks(*stage_masks, infi_const_mask)
 
+
+def infi_mask2(lengths):
+    n_mask_stages = 0
+    last_stage = len(lengths) - 1
+    row_affinity = pix[last_stage] ** 2 // 8
+    def lbound(b, h, q_idx, kv_idx):
+        left_distance = kv_idx - qlen[-MASK_RIGHT-1]
+        return q_idx - left_distance < row_affinity
+    def rbound(b, h, q_idx, kv_idx):
+        left_distance = kv_idx - qlen[-MASK_RIGHT-1]
+        return -q_idx + left_distance < row_affinity
+    return or_masks(infi_const_mask, and_masks(lbound, rbound))
+
 # def per_scale_score_mod1(b, h, q_idx, kv_idx):
 #     return (q_idx - (kv_idx - qlen[-2])) <= 8*pix[-1]
 
@@ -171,8 +184,6 @@ class FlexAttn(nn.Module):
         if self.offsets[-1] < L:
             self.offsets = torch.cat((self.offsets, torch.tensor([L], device='cuda')), dim=0)
         
-        self.use_flash = 0 #len(self.offsets) < 8
-
         if mask_type == "var":
             self.mask_mod = _generate_var_mask_mod(self.offsets)
             self.block_mask = create_block_mask(self.mask_mod, B = B, H = H, Q_LEN = L, KV_LEN = L, device = 'cuda', _compile = True)
@@ -183,7 +194,7 @@ class FlexAttn(nn.Module):
             self.mask_mod = _generate_var_infer_mask_with_kv_cache(self.lengths)
             print(B, H, L, self.lengths[-2:])
             pad_q = ((self.lengths[-1] + 127) // 128) * 128
-            mask = and_masks(infi_mask(self.lengths), self.mask_mod)
+            mask = and_masks(infi_mask2(self.lengths), self.mask_mod)
             #mask = self.mask_mod
             self.block_mask = create_block_mask(mask, B = 1, H = 1, Q_LEN = pad_q, KV_LEN = L, device = 'cuda', _compile = True)
             print(f"{self.block_mask}")
@@ -192,15 +203,7 @@ class FlexAttn(nn.Module):
 
 
     def forward(self, q, k, v, scale = None):
-        if self.use_flash:
-            #print(q.shape, k.shape, v.shape)
-            q_tp = q.transpose(1, 2)
-            k_tp = q.transpose(1, 2)
-            v_tp = q.transpose(1, 2)
-            #print(q_tp.shape, k_tp.shape, v_tp.shape)
-            oup = flash_attn_func(q_tp, k_tp, v_tp, dropout_p=0, softmax_scale=scale)
-            oup = oup.transpose(1, 2)
-        elif self.auto_padding:
+        if self.auto_padding:
             q_pad_len = (128 - q.shape[-2] % 128) % 128
             kv_pad_len = (128 - k.shape[-2] % 128) % 128
             q_pad = F.pad(q, (0, 0, 0, q_pad_len))
