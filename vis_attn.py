@@ -26,17 +26,18 @@ def visualize_attention(data, output_path, title=None):
     
     # 数据预处理和降采样
     data_normalized = data.astype(np.float32)
-    data_downsampled = average_pooling(data_normalized, scale_h, scale_w)
+    #data_downsampled = average_pooling(data_normalized, scale_h, scale_w)
+    data_downsampled = data_normalized[:512, -4096:-4096+512]
     
     # 可视化
-    plt.figure(figsize=(30, 8))
+    plt.figure(figsize=(40, 40))
     sns.heatmap(data_downsampled, cmap='viridis')
     if title:
         plt.title(title)
     
     # 添加分界线
-    for x in axvlines:
-        plt.axvline(x=x, color='red', linestyle='--', linewidth=0.5)
+    # for x in axvlines:
+    #     plt.axvline(x=x, color='red', linestyle='--', linewidth=0.5)
     
     # 保存结果
     plt.savefig(output_path, dpi=300, bbox_inches='tight')
@@ -58,13 +59,13 @@ def process_folder(input_folder, output_folder):
             head_num = name_parts[2].replace('head', '')
             
             # 构建输出文件路径
-            output_path = os.path.join(output_folder, f"{file_path.stem}.png")
+            output_path = os.path.join(output_folder, f"{file_path.stem}.sampled.png")
             
             # 可视化并保存
             visualize_attention(
                 data, 
                 output_path, 
-                title=f'Infinity Attention -2 Stage: Layer-{stage_num} Head-{head_num}'
+                title=f'Infinity Attention -1 Stage (Sample): Layer-{stage_num} Head-{head_num}'
             )
             print(f"处理完成: {file_path.name}")
             
@@ -73,8 +74,8 @@ def process_folder(input_folder, output_folder):
 
 if __name__ == "__main__":
     # 设置输入输出路径
-    input_folder = "infi_scores/stage11"
-    output_folder = "infi_scores/stage11/vis_results"
+    input_folder = "infi_scores/stage12"
+    output_folder = "infi_scores/stage12/vis_results"
     
     # 处理文件夹
-    process_folder(f'{input_folder}', output_folder)
+    process_folder(f'{input_folder}/layer0', output_folder)

@@ -76,6 +76,8 @@ def enhance_image(image):
         color_image = color_enhancer.enhance(1.05)  # 增强饱和度
     return color_image
 
+COST, INFI_COST = [], []
+
 def gen_one_img(
     infinity_test, 
     vae, 
@@ -120,7 +122,7 @@ def gen_one_img(
     #   profile_memory = True,
     #   record_shapes = True,
     #   with_stack = True
-    # ) as prof:
+    # ) as prof, torch.cuda.amp.autocast(enabled=True, dtype=torch.bfloat16, cache_enabled=True):
     with torch.cuda.amp.autocast(enabled=True, dtype=torch.bfloat16, cache_enabled=True):
         stt = time.time()
         _, _, img_list = infinity_test.autoregressive_infer_cfg(
@@ -137,7 +139,9 @@ def gen_one_img(
             sampling_per_bits=sampling_per_bits,
             verbose=verbose,
         )
-    print(f"cost: {time.time() - sstt}, infinity cost={time.time() - stt}")
+    end = time.time()
+    COST.append(end - sstt)
+    INFI_COST.append(end - stt)
     img = img_list[0]
     return img
 

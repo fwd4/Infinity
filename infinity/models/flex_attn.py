@@ -13,6 +13,12 @@ except ImportError:
     print(f"[Warning] flex attention need pytorch 2.5.0+ but your version is {torch.__version__}")
     flex_attention_available = False
 
+# Import flash_attn's attention
+from flash_attn import flash_attn_func                  # q, k, or v: BLHc, ret: BLHc
+from flash_attn import flash_attn_varlen_kvpacked_func  # qkv: N3Hc, ret: NHc
+
+from torch.nn.functional import scaled_dot_product_attention as slow_attn    # q, k, v: BHLc
+
 def _causal_mask(b, h, q_idx, kv_idx):
     return q_idx >= kv_idx
 
@@ -70,6 +76,7 @@ def _generate_var_infer_mask_with_kv_cache(lengths):
     return var_mask_mod
 
 pix = [1, 2, 4, 6, 8, 12, 16, 20, 24, 32, 40, 48, 64]
+# pix = [1, 8, 16, 24, 32, 40, 48, 64]
 row_aff = [p // 4 for p in pix]
 qlen_raw = [x*x for x in pix]
 qlen = torch.tensor(np.cumsum(qlen_raw), device='cuda')
@@ -163,6 +170,8 @@ class FlexAttn(nn.Module):
         # if L paded to align 128, block need to cover padding area
         if self.offsets[-1] < L:
             self.offsets = torch.cat((self.offsets, torch.tensor([L], device='cuda')), dim=0)
+        
+        self.use_flash = 0 #len(self.offsets) < 8
 
         if mask_type == "var":
             self.mask_mod = _generate_var_mask_mod(self.offsets)
@@ -183,13 +192,21 @@ class FlexAttn(nn.Module):
 
 
     def forward(self, q, k, v, scale = None):
-        if self.auto_padding:
+        if self.use_flash:
+            #print(q.shape, k.shape, v.shape)
+            q_tp = q.transpose(1, 2)
+            k_tp = q.transpose(1, 2)
+            v_tp = q.transpose(1, 2)
+            #print(q_tp.shape, k_tp.shape, v_tp.shape)
+            oup = flash_attn_func(q_tp, k_tp, v_tp, dropout_p=0, softmax_scale=scale)
+            oup = oup.transpose(1, 2)
+        elif self.auto_padding:
             q_pad_len = (128 - q.shape[-2] % 128) % 128
             kv_pad_len = (128 - k.shape[-2] % 128) % 128
             q_pad = F.pad(q, (0, 0, 0, q_pad_len))
             k_pad = F.pad(k, (0, 0, 0, kv_pad_len))
             v_pad = F.pad(v, (0, 0, 0, kv_pad_len))
-            oup = self.flex_attention(q_pad.to(v_pad.dtype), k_pad.to(v.dtype), v_pad, block_mask = self.block_mask, scale = scale)
+            oup = self.flex_attention(q_pad, k_pad, v_pad, block_mask = self.block_mask, scale = scale)
             if q_pad_len > 0:
                 oup = oup[:,:,:-q_pad_len]
         else:

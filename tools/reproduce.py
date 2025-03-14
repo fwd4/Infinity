@@ -30,7 +30,7 @@ args = argparse.Namespace(
     text_channels=2048,
     apply_spatial_patchify=0,
     h_div_w_template=1.000,
-    use_flex_attn=1,
+    use_flex_attn=0,
     cache_dir='/dev/shm',
     checkpoint_type='torch',
     seed=0,
@@ -111,5 +111,7 @@ for category, prompt in prompts.items():
     save_path = osp.join(output_dir, f"re_{category}_test.jpg")
     cv2.imwrite(save_path, generated_image.cpu().numpy())
     print(f"{category} image saved to {save_path}")
+
+print(f"img_cnt: {img_cnt}, cost: {np.mean(COST[1:])}, infinity cost={np.mean(INFI_COST[1:])}")
 
 # np.save('attn_time.npy', np.array(ATTN_TIME))

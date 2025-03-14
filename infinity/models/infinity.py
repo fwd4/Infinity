@@ -557,7 +557,7 @@ class Infinity(nn.Module):
 
         # backbone_time = []
         for si, pn in enumerate(scale_schedule):   # si: i-th segment
-            #t0 = time.time() * 1e3
+            t0 = time.time() * 1e3
 
             cfg = cfg_list[si]
             if si >= trunk_scale:
@@ -572,7 +572,7 @@ class Infinity(nn.Module):
                 #     last_stage = F.pad(last_stage, (0, 0, 0, need_to_pad))
                 attn_fn = self.attn_fn_compile_dict.get(tuple(scale_schedule[:(si+1)]), None)
 
-            # t1 = time.time() * 1e3
+            t1 = time.time() * 1e3
             # assert self.attn_bias_for_masking[:, :, last_L:cur_L, :cur_L].sum() == 0, f'AR with {(self.attn_bias_for_masking[:, :, last_L:cur_L, :cur_L] != 0).sum()} / {self.attn_bias_for_masking[:, :, last_L:cur_L, :cur_L].numel()} mask item'
             layer_idx = 0
             # layer_time = []
@@ -607,7 +607,7 @@ class Infinity(nn.Module):
 
 
             # backbone_time.append(layer_time)
-            # t2 = time.time() * 1e3
+            t2 = time.time() * 1e3
             
             if (cfg != 1) and add_cfg_on_logits:
                 # print(f'add cfg on add_cfg_on_logits')
@@ -664,9 +664,8 @@ class Infinity(nn.Module):
                 last_stage = self.word_embed(self.norm0_ve(last_stage))
                 last_stage = last_stage.repeat(bs//B, 1, 1)
 
-        #     t3 = time.time() * 1e3
-        #     print(f"stage {si}, {pn}, {t1 - t0:.2f}ms, {t2 - t1:.2f}ms, {t3 - t2:.2f}ms")
-        #     #get_torch_mem_usage()
+            t3 = time.time() * 1e3
+            print(f"stage {si}, {pn}, {t1 - t0:.2f}ms, {t2 - t1:.2f}ms, {t3 - t2:.2f}ms")
         # tt2 = time.time() * 1e3
 
         if inference_mode:

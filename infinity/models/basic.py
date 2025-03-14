@@ -282,7 +282,7 @@ class SelfAttention(nn.Module):
         # x: fp32
         B, L, C = x.shape
         
-        self.using_flash = 0
+        # self.using_flash = 0
         
         # qkv: amp, bf16
         qkv = F.linear(input=x, weight=self.mat_qkv.weight, bias=torch.cat((self.q_bias, self.zero_k_bias, self.v_bias))).view(B, L, 3, self.num_heads, self.head_dim)  # BL3Hc
@@ -306,9 +306,11 @@ class SelfAttention(nn.Module):
             k = k.contiguous()      # bf16
             v = v.contiguous()      # bf16
 
+
         if rope2d_freqs_grid is not None:
             q, k = apply_rotary_emb(q, k, scale_schedule, rope2d_freqs_grid, self.pad_to_multiplier, self.rope2d_normalized_by_hw, scale_ind, self.using_flash) #, freqs_cis=freqs_cis)
             #q_, k_ = apply_rotary_emb(q_, k_, scale_schedule, rope2d_freqs_grid, self.pad_to_multiplier, self.rope2d_normalized_by_hw, scale_ind, 1) #, freqs_cis=freqs_cis)
+
         if self.caching:    # kv caching: only used during inference
             if self.cached_k is None: 
                 self.cached_k = k; self.cached_v = v
@@ -320,14 +322,14 @@ class SelfAttention(nn.Module):
         # torch.testing.assert_close(k, k_.transpose(1, 2))
         # torch.testing.assert_close(v, v_.transpose(1, 2))
         # exit(0)
-        if 0 and not self.using_flash and L == 2304:
-            k_ = k.transpose(2, 3).reshape(B * self.num_heads, k.shape[3], k.shape[2]).contiguous()
-            q_ = q.reshape(B * self.num_heads, q.shape[2], k.shape[3]).contiguous()
-            scores = torch.baddbmm(torch.randn(1,device='cuda'), q_, k_, beta=0, alpha=self.scale)
-            for s in range(B * self.num_heads):
-                attention = torch.softmax(scores[s], dim=-1)
-                np.save(f'infi_scores/stage11/scores_{len(scores_)}_head{s}.npy', attention.to(torch.half).cpu())
-            scores_.append('Layer')
+        # if 0 and not self.using_flash and L == 2304:
+        #     k_ = k.transpose(2, 3).reshape(B * self.num_heads, k.shape[3], k.shape[2]).contiguous()
+        #     q_ = q.reshape(B * self.num_heads, q.shape[2], k.shape[3]).contiguous()
+        #     scores = torch.baddbmm(torch.randn(1,device='cuda'), q_, k_, beta=0, alpha=self.scale)
+        #     for s in range(B * self.num_heads):
+        #         attention = torch.softmax(scores[s], dim=-1)
+        #         np.save(f'infi_scores/stage11/scores_{len(scores_)}_head{s}.npy', attention.to(torch.half).cpu())
+        #     scores_.append('Layer')
 
         # print(q.shape, x.shape)
 
@@ -343,7 +345,7 @@ class SelfAttention(nn.Module):
             # if self.cos_attn: q, k are in fp32; v is in bf16
             # else: q, k, v are in bf16
             if self.use_flex_attn and attn_fn is not None:
-                oup = attn_fn(q, k, v, scale=self.scale).transpose(1, 2).reshape(B, L, C)
+                oup = attn_fn(q.to(v.dtype), k.to(v.dtype), v, scale=self.scale).transpose(1, 2).reshape(B, L, C)
             else:
                 #oup = slow_attn(query=q, key=k, value=v, scale=self.scale, attn_mask=attn_bias_or_two_vector, dropout_p=0).transpose(1, 2).reshape(B, L, C)
                 oup = slow_attn(query=q, key=k, value=v, scale=self.scale, attn_mask=None, dropout_p=0).transpose(1, 2).reshape(B, L, C)
