@@ -8,10 +8,16 @@ from run_infinity import *
 from infinity.models.basic import scores_
 
 torch.cuda.set_device(0)
-model_path = '/workspace/Infinity/weights/infinity_2b_reg.pth'
-vae_path = '/workspace/Infinity/weights/infinity_vae_d32reg.pth'
-text_encoder_ckpt = '/workspace/Infinity/weights/flan-t5-xl'
+model_path = '/home/xujiaming/xujiaming/train_machine/dataset/Infinity/infinity_2b_reg.pth'
+vae_path = '/home/xujiaming/xujiaming/train_machine/dataset/Infinity/infinity_vae_d32reg.pth'
+text_encoder_ckpt = '/home/xujiaming/xujiaming/train_machine/dataset/flan-t5-xl'
 
+import os  
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"  
+import warnings  
+
+# 忽略 FutureWarning 类型的警告  
+warnings.filterwarnings("ignore", category=FutureWarning)  
 # SET
 args = argparse.Namespace(
     pn='1M',
@@ -51,17 +57,17 @@ get_torch_mem_usage()
 prompts = {
     "vintage_insect": "Insect made from vintage 1960s electronic components, capacitors, resistors, transistors, wires, diodes, solder, circuitboard.",
     "macro_closeup": "Denis Villeneuve's extreme macro cinematographic close-up in water.",
-    "3d_school": "A creative 3D image to be placed at the bottom of a mobile application's homepage, depicting a miniature school and children carrying backpacks.",
-    "explore_more": "Create an image with 'Explore More' in an adventurous font over a picturesque hiking trail.",
-    "toy_car": "Close-up shot of a diecast toy car, diorama, night, lights from windows, bokeh, snow.",
-    "fairy_house": "House: white; pink tinted windows; surrounded by flowers; cute; scenic; garden; fairy-like; epic; photography; photorealistic; insanely detailed and intricate; textures; grain; ultra-realistic.",
-    "cat_fashion": "Hyperrealistic black and white photography of cats fashion show in style of Helmut Newton.",
-    "spacefrog_astroduck": "Two superheroes called Spacefrog (a dashing green cartoon-like frog with a red cape) and Astroduck (a yellow fuzzy duck, part-robot, with blue/grey armor), near a garden pond, next to their spaceship, a classic flying saucer, called the Tadpole 3000. Photorealistic.",
-    "miniature_village": "An enchanted miniature village bustling with activity, featuring tiny houses, markets, and residents.",
-    "corgi_dog": "A close-up photograph of a Corgi dog. The dog is wearing a black hat and round, dark sunglasses. The Corgi has a joyful expression, with its mouth open and tongue sticking out, giving an impression of happiness or excitement.",
-    "robot_eggplant": "a robot holding a huge eggplant, sunny nature background",
-    "perfume_product": "Product photography, a perfume placed on a white marble table with pineapple, coconut, lime next to it as decoration, white curtains, full of intricate details, realistic, minimalist, layered gestures in a bright and concise atmosphere, minimalist style.",
-    "mountain_landscape": "The image presents a picturesque mountainous landscape under a cloudy sky. The mountains, blanketed in lush greenery, rise majestically, their slopes dotted with clusters of trees and shrubs. The sky above is a canvas of blue, adorned with fluffy white clouds that add a sense of tranquility to the scene. In the foreground, a valley unfolds, nestled between the towering mountains. It appears to be a rural area, with a few buildings and structures visible, suggesting the presence of a small settlement. The buildings are scattered, blending harmoniously with the natural surroundings. The image is captured from a high vantage point, providing a sweeping view of the valley and the mountains."
+    # "3d_school": "A creative 3D image to be placed at the bottom of a mobile application's homepage, depicting a miniature school and children carrying backpacks.",
+    # "explore_more": "Create an image with 'Explore More' in an adventurous font over a picturesque hiking trail.",
+    # "toy_car": "Close-up shot of a diecast toy car, diorama, night, lights from windows, bokeh, snow.",
+    # "fairy_house": "House: white; pink tinted windows; surrounded by flowers; cute; scenic; garden; fairy-like; epic; photography; photorealistic; insanely detailed and intricate; textures; grain; ultra-realistic.",
+    # "cat_fashion": "Hyperrealistic black and white photography of cats fashion show in style of Helmut Newton.",
+    # "spacefrog_astroduck": "Two superheroes called Spacefrog (a dashing green cartoon-like frog with a red cape) and Astroduck (a yellow fuzzy duck, part-robot, with blue/grey armor), near a garden pond, next to their spaceship, a classic flying saucer, called the Tadpole 3000. Photorealistic.",
+    # "miniature_village": "An enchanted miniature village bustling with activity, featuring tiny houses, markets, and residents.",
+    # "corgi_dog": "A close-up photograph of a Corgi dog. The dog is wearing a black hat and round, dark sunglasses. The Corgi has a joyful expression, with its mouth open and tongue sticking out, giving an impression of happiness or excitement.",
+    # "robot_eggplant": "a robot holding a huge eggplant, sunny nature background",
+    # "perfume_product": "Product photography, a perfume placed on a white marble table with pineapple, coconut, lime next to it as decoration, white curtains, full of intricate details, realistic, minimalist, layered gestures in a bright and concise atmosphere, minimalist style.",
+    # "mountain_landscape": "The image presents a picturesque mountainous landscape under a cloudy sky. The mountains, blanketed in lush greenery, rise majestically, their slopes dotted with clusters of trees and shrubs. The sky above is a canvas of blue, adorned with fluffy white clouds that add a sense of tranquility to the scene. In the foreground, a valley unfolds, nestled between the towering mountains. It appears to be a rural area, with a few buildings and structures visible, suggesting the presence of a small settlement. The buildings are scattered, blending harmoniously with the natural surroundings. The image is captured from a high vantage point, providing a sweeping view of the valley and the mountains."
 }
 
 # OUTPUT
@@ -101,9 +107,9 @@ for category, prompt in prompts.items():
         verbose=False,
     )
     # exit(0)
-    # img_cnt+=1
-    # if img_cnt == 2:
-    #     exit(0)
+    img_cnt+=1
+    if img_cnt == 2:
+        exit(0)
 
     # SAVE
     save_path = osp.join(output_dir, f"re_{category}_test.jpg")

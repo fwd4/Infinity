@@ -24,6 +24,82 @@ from infinity.utils import misc
 from infinity.models.flex_attn import FlexAttn
 from infinity.utils.dynamic_resolution import dynamic_resolution_h_w, h_div_w_templates
 
+import matplotlib.pyplot as plt  
+import seaborn as sns  
+from matplotlib.backends.backend_pdf import PdfPages  
+
+def print_diff(diff_avg):
+    avg_max = diff_avg.max().item()  
+    avg_min = diff_avg.min().item()  
+
+    # 计算小于0.1和0.01的百分比  
+    diff_avg_np = diff_avg.detach().cpu().numpy() 
+    total_elements = diff_avg_np.size  
+    less_than_01 = np.sum(diff_avg_np < 0.1)  
+    less_than_001 = np.sum(diff_avg_np < 0.01)  
+
+    percent_less_01 = (less_than_01 / total_elements) * 100  
+    percent_less_001 = (less_than_001 / total_elements) * 100 
+    print(f'Average Difference\nMax: {avg_max:.2e}, Min: {avg_min:.2e}, <0.1: {percent_less_01:.2f}%, <0.01: {percent_less_001:.2f}%')
+
+def plot_three_heatmaps(diff_avg, title, pdf):  
+    """  
+    绘制三张并排的热力图, 显示两个batch的差异和平均值  
+    """   
+
+    fig, ax = plt.subplots(figsize=(10, 8))  # 创建图形和单个轴   
+    # 提取每个矩阵的最大值和最小值  
+    # batch1_max = diff_batch1.max().item()  
+    # batch1_min = diff_batch1.min().item()  
+    # batch2_max = diff_batch2.max().item()  
+    # batch2_min = diff_batch2.min().item()  
+    avg_max = diff_avg.max().item()  
+    avg_min = diff_avg.min().item()  
+
+    # 计算小于0.1和0.01的百分比  
+    diff_avg_np = diff_avg.detach().cpu().numpy() 
+    total_elements = diff_avg_np.size  
+    less_than_01 = np.sum(diff_avg_np < 0.1)  
+    less_than_001 = np.sum(diff_avg_np < 0.01)  
+
+    percent_less_01 = (less_than_01 / total_elements) * 100  
+    percent_less_001 = (less_than_001 / total_elements) * 100 
+    print(f'Average Difference\nMax: {avg_max:.2e}, Min: {avg_min:.2e}, <0.1: {percent_less_01:.2f}%, <0.01: {percent_less_001:.2f}%')
+    # # 绘制第一个batch的热力图  
+    # sns.heatmap(diff_batch1.detach().cpu().numpy(),   
+    #             ax=ax1,   
+    #             annot=True,   
+    #             fmt='.2e',   
+    #             cmap='viridis')  
+    # ax1.set_title(f'Batch 1 Difference\nMax: {batch1_max:.2e}, Min: {batch1_min:.2e}')  
+
+    # # 绘制第二个batch的热力图  
+    # sns.heatmap(diff_batch2.detach().cpu().numpy(),   
+    #             ax=ax2,   
+    #             annot=True,   
+    #             fmt='.2e',   
+    #             cmap='viridis')  
+    # ax2.set_title(f'Batch 2 Difference\nMax: {batch2_max:.2e}, Min: {batch2_min:.2e}')  
+
+    
+
+    sns.heatmap(diff_avg_np,     
+                ax=ax,  # 指定要绘制的轴  
+                annot=False,   
+                fmt='.2e',   
+                cmap='viridis')  
+
+    ax.set_title(f'Average Difference\nMax: {avg_max:.2e}, Min: {avg_min:.2e}, <0.1: {percent_less_01:.2f}%, <0.01: {percent_less_001:.2f}%'  )  
+
+    # 设置总标题  
+    plt.suptitle(title, fontsize=16, y=1.02)  # 使用suptitle，并稍微调整垂直位置  
+
+    plt.tight_layout()   
+
+    # 保存图片  
+    pdf.savefig(fig)  
+    plt.close()  
+
 def get_torch_mem_usage():
     a, r = torch.cuda.memory_allocated(), torch.cuda.memory_reserved()
     print(f"allocated: {a/1024**3:.2f}GB, reserved: {r/1024**3:.2f}GB")
@@ -559,7 +635,11 @@ class Infinity(nn.Module):
 
         # backbone_time = []
         for si, pn in enumerate(scale_schedule):   # si: i-th segment
-            #t0 = time.time() * 1e3
+            # t0 = time.time() * 1e3
+            import os
+            # pdf_filename = os.path.join('/home/xujiaming/xujiaming/train_machine/lyx/Infinity/outputs/profile', f'heatmap_scale_{si}.pdf')  
+            # pdf_filename = f'heatmap_scale_{si}.pdf'  
+            # pdf = PdfPages(pdf_filename)  
 
             cfg = cfg_list[si]
             if si >= trunk_scale:
@@ -580,15 +660,7 @@ class Infinity(nn.Module):
             # layer_time = []
             #print(self.block_chunks)
 
-            # with profile(
-            #   #activities = [ProfilerActivity.CPU, ProfilerActivity.CUDA],
-            #   #activities = [ProfilerActivity.CUDA],
-            #   # schedule = tracing_schedule,
-            #   on_trace_ready = trace_handler,
-            #   profile_memory = True,
-            #   record_shapes = True,
-            #   with_stack = True
-            # ) as prof:
+
             for block_idx, b in enumerate(self.block_chunks):
                 # ttt0 = time.time() * 1e3
                 # last_stage shape: [4, 1, 2048], cond_BD_or_gss.shape: [4, 1, 6, 2048], ca_kv[0].shape: [64, 2048], ca_kv[1].shape [5], ca_kv[2]: int
@@ -601,7 +673,8 @@ class Infinity(nn.Module):
                 # print(b.module)
                 # print('++++++++++++++++++++++++++++++++++')
 
-                for m in b.module:
+                for i, m in enumerate(b.module):     #for m in b.module:
+                    current_stage = last_stage.clone()  
                     # tt = time.time()
                     last_stage = m(x=last_stage, cond_BD=cond_BD_or_gss, ca_kv=ca_kv, attn_bias_or_two_vector=None, attn_fn=attn_fn, scale_schedule=scale_schedule, rope2d_freqs_grid=self.rope2d_freqs_grid, scale_ind=si)
                     # layer_time.append((time.time() - tt) * 1e3)
@@ -612,10 +685,26 @@ class Infinity(nn.Module):
                         last_stage = cfg * last_stage[:B] + (1-cfg) * last_stage[B:]
                         last_stage = torch.cat((last_stage, last_stage), 0)
                     layer_idx += 1
+                    # diff = (last_stage - current_stage).abs()
+                    # diff_batch1 = (last_stage[0] - current_stage[0]).abs() 
+                    # diff_batch2 = (last_stage[1] - current_stage[1]).abs()
+                    # 计算平均差值  
+                    diff_avg = (last_stage - current_stage).abs().mean(0) 
+                    print(diff_avg.shape)
+                    print_diff(diff_avg)
+                    # 绘制三张热力图  
+                    # plot_three_heatmaps(  
+                    #     # diff_batch1,  
+                    #     # diff_batch2,  
+                    #     diff_avg,  
+                    #     f'Scale {si}, Block {i} Difference',  
+                    #     pdf  
+                    # )                  
+
                 # ttt1 = time.time() * 1e3
                 #print(f"block {block_idx} exec: {ttt1 - ttt0:.2f}ms")
 
-
+            # pdf.close()  
             # backbone_time.append(layer_time)
             # t2 = time.time() * 1e3
             
@@ -674,8 +763,8 @@ class Infinity(nn.Module):
                 last_stage = self.word_embed(self.norm0_ve(last_stage))
                 last_stage = last_stage.repeat(bs//B, 1, 1)
 
-        #     t3 = time.time() * 1e3
-        #     print(f"stage {si}, {pn}, {t1 - t0:.2f}ms, {t2 - t1:.2f}ms, {t3 - t2:.2f}ms")
+            # t3 = time.time() * 1e3
+            # print(f"stage {si}, {pn}, all {t3 - t0:.2f}ms, {t1 - t0:.2f}ms, 32block {t2 - t1:.2f}ms, {t3 - t2:.2f}ms")
         #     #get_torch_mem_usage()
         # tt2 = time.time() * 1e3
 
@@ -694,7 +783,7 @@ class Infinity(nn.Module):
             img = vae.decode(summed_codes.squeeze(-3))
         else:
             img = vae.viz_from_ms_h_BChw(ret, scale_schedule=scale_schedule, same_shape=True, last_one=True)
-        #tt3 = time.time() * 1e3
+        # tt3 = time.time() * 1e3
 
         img = (img + 1) / 2
         img = img.permute(0, 2, 3, 1).mul_(255).to(torch.uint8).flip(dims=(3,))
