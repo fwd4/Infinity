@@ -20,6 +20,14 @@ from PIL import Image, ImageEnhance
 import torch.nn.functional as F
 from torch.cuda.amp import autocast
 
+import sys
+path_to_add = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..') 
+sys.path.append(path_to_add)  
+
+from torch.profiler import profile, schedule, tensorboard_trace_handler, ProfilerActivity
+
+trace_handler = tensorboard_trace_handler(dir_name=f"outputs/profile", use_gzip=False)
+
 from infinity.models.infinity import Infinity, get_torch_mem_usage#, ATTN_TIME
 from infinity.models.basic import *
 import PIL.Image as PImage
@@ -110,6 +118,15 @@ def gen_one_img(
     else:
         negative_label_B_or_BLT = None
     print(f'cfg: {cfg_list}, tau: {tau_list}')
+    # with profile(
+    # #activities = [ProfilerActivity.CPU, ProfilerActivity.CUDA],
+    # #activities = [ProfilerActivity.CUDA],
+    # # schedule = tracing_schedule,
+    # on_trace_ready = trace_handler,
+    # profile_memory = True,
+    # record_shapes = True,
+    # with_stack = True
+    # ) as prof:
     with torch.cuda.amp.autocast(enabled=True, dtype=torch.bfloat16, cache_enabled=True):
         stt = time.time()
         _, _, img_list = infinity_test.autoregressive_infer_cfg(
