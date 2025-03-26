@@ -24,6 +24,7 @@ infer_eval_image_reward() {
     --use_scale_schedule_embedding ${use_scale_schedule_embedding} \
     --cfg ${cfg} \
     --tau ${tau} \
+    --use_flex_attn ${use_flex_attn} \
     --checkpoint_type ${checkpoint_type} \
     --text_encoder_ckpt ${text_encoder_ckpt} \
     --text_channels ${text_channels} \
@@ -62,6 +63,7 @@ infer_eval_hpsv21() {
     --use_scale_schedule_embedding ${use_scale_schedule_embedding} \
     --cfg ${cfg} \
     --tau ${tau} \
+    --use_flex_attn ${use_flex_attn} \
     --checkpoint_type ${checkpoint_type} \
     --text_encoder_ckpt ${text_encoder_ckpt} \
     --text_channels ${text_channels} \
@@ -95,6 +97,7 @@ test_gen_eval() {
     --use_scale_schedule_embedding ${use_scale_schedule_embedding} \
     --cfg ${cfg} \
     --tau ${tau} \
+    --use_flex_attn ${use_flex_attn} \
     --checkpoint_type ${checkpoint_type} \
     --text_encoder_ckpt ${text_encoder_ckpt} \
     --text_channels ${text_channels} \
@@ -203,6 +206,8 @@ text_channels=2048
 apply_spatial_patchify=0
 cfg_insertion_layer=0
 sub_fix=cfg${cfg}_tau${tau}_cfg_insertion_layer${cfg_insertion_layer}
+use_flex_attn=0
+prefix=1497
 
 
 # 参数校验
@@ -217,17 +222,20 @@ task=$1
 
 case $task in
     image_reward)
-        out_dir="${out_dir_root}/image_reward_${sub_fix}"
+        out_dir="${out_dir_root}/image_reward_${sub_fix}_flex_attn${use_flex_attn}_prefix${prefix}"
         infer_eval_image_reward
+        break
         ;;
     hpsv21)
-        out_dir="${out_dir_root}/hpsv21_${sub_fix}"
+        out_dir="${out_dir_root}/hpsv21_${sub_fix}_flex_attn${use_flex_attn}_prefix${prefix}"
         infer_eval_hpsv21
+        break
         ;;
     gen_eval)
         rewrite_prompt=1
-        out_dir="${out_dir_root}/gen_eval_${sub_fix}_rewrite_prompt${rewrite_prompt}_round2_real_rewrite"
+        out_dir="${out_dir_root}/gen_eval_${sub_fix}_rewrite_prompt${rewrite_prompt}_flex_attn${use_flex_attn}_round2_real_rewrite_prefix${prefix}"
         test_gen_eval
+        break
         ;;
     long_caption_fid)
         long_caption_fid=1
@@ -235,6 +243,7 @@ case $task in
         out_dir="${out_dir_root}/val_long_caption_fid_${sub_fix}_rewrite_prompt${rewrite_prompt}"
         rm -rf "${out_dir}"
         test_fid
+        break
         ;;
     val_loss)
         out_dir="${out_dir_root}/val_loss_${sub_fix}_rewrite_prompt${rewrite_prompt}"
@@ -242,6 +251,7 @@ case $task in
         jsonl_folder='[YOUR VAL JSONL FILEPATH]'
         noise_apply_strength=0.2
         test_val_loss
+        break
         ;;
     *)
         echo "Error: Unknown task '$task'"

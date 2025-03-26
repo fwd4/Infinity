@@ -141,3 +141,5 @@ if __name__ == '__main__':
     
         with open(prompt_rewrite_cache_file, 'w') as f:
             json.dump(prompt_rewrite_cache, f, indent=2)
+    
+    print(f"img_cnt: {len(images)}, cost: {np.mean(COST[1:])}, infinity cost={np.mean(INFI_COST[1:])}")

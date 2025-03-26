@@ -315,7 +315,11 @@ class SelfAttention(nn.Module):
             if self.cached_k is None: 
                 self.cached_k = k; self.cached_v = v
                 #self.cached_k_ = k_; self.cached_v_ = v_
-            elif self.cached_k.shape[L_dim] >= 921:
+            #elif self.use_flex_attn and self.cached_k.shape[L_dim] >= 921:
+            elif self.cached_k.shape[L_dim] >= 1497:
+            #elif self.cached_k.shape[L_dim] >= 921:
+            # elif self.cached_k.shape[L_dim] >= 521:
+            #elif self.cached_k.shape[L_dim] >= 265:
                 k = torch.cat((self.cached_k, k), dim=L_dim); v = torch.cat((self.cached_v, v), dim=L_dim)
             else: 
                 k = self.cached_k = torch.cat((self.cached_k, k), dim=L_dim); v = self.cached_v = torch.cat((self.cached_v, v), dim=L_dim)

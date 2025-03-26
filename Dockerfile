@@ -33,4 +33,6 @@ RUN MAX_JOBS=8 pip install flash-attn --no-build-isolation \
 
 RUN python3 -c "from opencv_fixer import AutoFix; AutoFix()"
 
+RUN pip install datasets
+
 CMD ["/bin/bash"]

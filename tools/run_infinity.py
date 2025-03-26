@@ -113,7 +113,7 @@ def gen_one_img(
         negative_label_B_or_BLT = encode_prompt(text_tokenizer, text_encoder, negative_prompt)
     else:
         negative_label_B_or_BLT = None
-    print(f'cfg: {cfg_list}, tau: {tau_list}')
+    # print(f'cfg: {cfg_list}, tau: {tau_list}')
     # with profile(
     #   #activities = [ProfilerActivity.CPU, ProfilerActivity.CUDA],
     #   #activities = [ProfilerActivity.CUDA],
@@ -123,7 +123,7 @@ def gen_one_img(
     #   record_shapes = True,
     #   with_stack = True
     # ) as prof, torch.cuda.amp.autocast(enabled=True, dtype=torch.bfloat16, cache_enabled=True):
-    get_torch_mem_usage()
+    # get_torch_mem_usage()
     with torch.cuda.amp.autocast(enabled=True, dtype=torch.bfloat16, cache_enabled=True):
         stt = time.time()
         _, _, img_list = infinity_test.autoregressive_infer_cfg(
@@ -233,6 +233,7 @@ def load_infinity(
         elif checkpoint_type == 'torch_shard':
             from transformers.modeling_utils import load_sharded_checkpoint
             load_sharded_checkpoint(infinity_test, model_path, strict=False)
+            #infinity_test.to(torch.bfloat16)
         infinity_test.rng = torch.Generator(device=device)
         return infinity_test
 

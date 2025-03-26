@@ -47,3 +47,4 @@ wandb
 .DS_Store
 
 infi_scores/
+conf.py

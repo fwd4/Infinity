@@ -151,6 +151,10 @@ class T2IIterableDataset(IterableDataset):
                 'num_of_batches': num_of_batches,
             }
             samples_div_gpus_workers_batchsize_2batches += num_of_batches
+        if self.rank == 0:
+            for k, v in h_div_w_template2generator.items():
+                print(k, v)
+
         return h_div_w_template2generator, samples_div_gpus_workers_batchsize_2batches, total_samples
 
     def split_meta_files(self, ):
@@ -233,15 +237,23 @@ class T2IIterableDataset(IterableDataset):
         self.set_global_worker_id()
         self.set_generator()
         
+        # 为每个高宽比模板初始化内存缓冲区
         for h_div_w_template, generator_info in self.h_div_w_template2generator.items():
+            # 计算该高宽比模板在总批次中的比例
             proportion = generator_info['num_of_batches'] / self.samples_div_gpus_workers_batchsize_2batches
+            # 根据比例分配缓冲区大小，确保数据分布平衡
             h_div_w_buffer_size = int(self.buffer_size * proportion)
+            # 限制缓冲区大小：至少为1，最大不超过该模板的总批次数乘以批次大小
             h_div_w_buffer_size = min(max(1, h_div_w_buffer_size), generator_info['num_of_batches'] * self.batch_size)
+            # 如果已存在缓冲区，先清除以避免内存泄漏
             if 'mem_buffer' in generator_info:
                 del generator_info['mem_buffer']
+            # 创建新的内存缓冲区
             mem_buffer = []
+            # 预先填充缓冲区，通过infinite_next方法获取数据项
             for _ in range(h_div_w_buffer_size):
                 mem_buffer.append(self.infinite_next(generator_info))
+            # 将填充好的缓冲区保存到generator_info中
             generator_info['mem_buffer'] = mem_buffer
         
         next_h_div_w_template_iter = self._next_h_div_w_template()
@@ -365,22 +377,33 @@ class T2IIterableDataset(IterableDataset):
 
 if __name__ == '__main__':
     # torchrun --nnodes=1 --nproc-per-node=2 --master_addr=$METIS_WORKER_0_HOST --master_port=$METIS_WORKER_0_PORT dataset/dataset_t2i_iterable.py
-    tdist.init_process_group(backend='nccl')
+    # Get local rank for this process
+    local_rank = int(os.environ.get("LOCAL_RANK", 0))
+    # Set the device before initializing the process group
+    torch.cuda.set_device(local_rank)
+    tdist.init_process_group(
+        backend='nccl',
+        init_method='env://',
+        world_size=8,
+        rank=local_rank,
+        device_id=torch.device(f'cuda:{local_rank}'))
     batch_size = 2
-    dataloader_workers = 12
+    dataloader_workers = 2
     dataset = T2IIterableDataset(
         args=None, 
-        meta_folder='data/train_splits/xxx_pretrain/jsonl_files_filter_duplicate_captions',
+        meta_folder='data/infinity_toy_data/splits',
+        #meta_folder='data/train_splits/xxx_pretrain/jsonl_files_filter_duplicate_captions',
         data_load_reso=None, 
         max_caption_len=512, 
         short_prob=1.0, 
         load_vae_instead_of_image=False,
-        buffersize=100000,
+        buffersize=10000,
         seed=0, 
         online_t5=True,
-        pn='0.06M',
+        #pn='0.06M',
+        pn='1M',
         batch_size=batch_size,
-        num_replicas=8, # tdist.get_world_size(),
+        num_replicas=tdist.get_world_size(),
         rank=tdist.get_rank(), # 0
         dataloader_workers=dataloader_workers,
     )
@@ -399,10 +422,11 @@ if __name__ == '__main__':
             if h_div_w not in h_div_w2samples:
                 h_div_w2samples[h_div_w] = 0
             h_div_w2samples[h_div_w] += 1
-            if (i+1) % 100 == 0:
-                total_samples = np.sum(list(h_div_w2samples.values()))
-                print()
-                for h_div_w, num in sorted(h_div_w2samples.items()):
-                    print(f'h_div_w: {h_div_w}, samples: {num}, proportion: {num/total_samples*100:.1f}%')
-                print()
+
             t1 = time.time()
+        total_samples = np.sum(list(h_div_w2samples.values()))
+        print()
+        for h_div_w, num in sorted(h_div_w2samples.items()):
+            print(f'h_div_w: {h_div_w}, samples: {num}, proportion: {num/total_samples*100:.1f}%')
+        print()
+    tdist.destroy_process_group()

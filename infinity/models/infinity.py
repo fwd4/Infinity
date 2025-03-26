@@ -317,9 +317,13 @@ class Infinity(nn.Module):
                 scale_schedule = full_scale_schedule[:scales_num]
                 scale_schedule = [ (min(t, self.video_frames//4+1), h, w) for (t,h, w) in scale_schedule]
                 patchs_nums_tuple = tuple(scale_schedule)
-                SEQ_L = sum( pt * ph * pw for pt, ph, pw in patchs_nums_tuple)
+                # For kv-cache opt
+                SEQ_L = sum( pt * ph * pw for pt, ph, pw in patchs_nums_tuple[:7])
+                if len(patchs_nums_tuple) > 7:
+                    pt, ph, pw = patchs_nums_tuple[-1]
+                    SEQ_L += pt * ph * pw
                 aligned_L = SEQ_L+ (self.pad_to_multiplier - SEQ_L % self.pad_to_multiplier) if SEQ_L % self.pad_to_multiplier != 0 else SEQ_L
-                # print(SEQ_L, aligned_L, patchs_nums_tuple)
+                print(SEQ_L, aligned_L, patchs_nums_tuple)
                 attn_fn = FlexAttn(block_scales = patchs_nums_tuple,
                                         mask_type = mask_type,
                                         B = self.batch_size, 
@@ -665,8 +669,8 @@ class Infinity(nn.Module):
                 last_stage = last_stage.repeat(bs//B, 1, 1)
 
             t3 = time.time() * 1e3
-            print(f"stage {si}, {pn}, {t1 - t0:.2f}ms, {t2 - t1:.2f}ms, {t3 - t2:.2f}ms")
-            get_torch_mem_usage()
+            # print(f"stage {si}, {pn}, {t1 - t0:.2f}ms, {t2 - t1:.2f}ms, {t3 - t2:.2f}ms")
+            # get_torch_mem_usage()
         # tt2 = time.time() * 1e3
 
         if inference_mode:

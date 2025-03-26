@@ -10,6 +10,8 @@ from infinity.models.basic import scores_
 torch.cuda.set_device(0)
 model_path = '/workspace/Infinity/weights/infinity_2b_reg.pth'
 vae_path = '/workspace/Infinity/weights/infinity_vae_d32reg.pth'
+# model_path = '/workspace/Infinity/weights/infinty_8b_weights'
+# vae_path = '/workspace/Infinity/weights/infinity_vae_d56_f8_14_patchify.pth'
 text_encoder_ckpt = '/workspace/Infinity/weights/flan-t5-xl'
 
 # SET
@@ -18,6 +20,7 @@ args = argparse.Namespace(
     model_path=model_path,
     cfg_insertion_layer=0,
     vae_type=32,
+    #vae_type=14,
     vae_path=vae_path,
     add_lvl_embeding_only_first_block=1,
     use_bit_label=1,
@@ -30,8 +33,9 @@ args = argparse.Namespace(
     text_channels=2048,
     apply_spatial_patchify=0,
     h_div_w_template=1.000,
-    use_flex_attn=1,
+    use_flex_attn=0,
     cache_dir='/dev/shm',
+    #checkpoint_type='torch_shard',
     checkpoint_type='torch',
     seed=0,
     bf16=1,
@@ -45,6 +49,7 @@ get_torch_mem_usage()
 vae = load_visual_tokenizer(args)
 get_torch_mem_usage()
 infinity = load_transformer(vae, args)
+get_torch_mem_usage()
 
 # PROMPT
 prompts = {

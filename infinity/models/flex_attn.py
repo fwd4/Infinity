@@ -81,9 +81,9 @@ row_aff = [p // 4 for p in pix]
 qlen_raw = [x*x for x in pix]
 qlen = torch.tensor(np.cumsum(qlen_raw), device='cuda')
 pix = torch.tensor(pix, device='cuda')
-print(qlen)
+# print(qlen)
 
-MASK_RIGHT=5
+MASK_RIGHT=6
 
 def infi_const_mask(b, h, q_idx, kv_idx):
     return kv_idx <= qlen[-MASK_RIGHT-1]
@@ -180,6 +180,8 @@ class FlexAttn(nn.Module):
 
         self.offsets = _length_to_offsets(self.lengths, device='cuda')
 
+        self.use_flash = False #len(self.offsets) <= 10
+
         # if L paded to align 128, block need to cover padding area
         if self.offsets[-1] < L:
             self.offsets = torch.cat((self.offsets, torch.tensor([L], device='cuda')), dim=0)
@@ -192,10 +194,10 @@ class FlexAttn(nn.Module):
             self.block_mask = create_block_mask(self.mask_mod, B = B, H = H, Q_LEN = L, KV_LEN = L, device = 'cuda', _compile = True)
         elif mask_type == 'var_infer_mask_with_kv_cache':
             self.mask_mod = _generate_var_infer_mask_with_kv_cache(self.lengths)
-            print(B, H, L, self.lengths[-2:])
+            # print(B, H, L, self.lengths[-2:])
             pad_q = ((self.lengths[-1] + 127) // 128) * 128
-            mask = and_masks(infi_mask2(self.lengths), self.mask_mod)
-            #mask = self.mask_mod
+            #mask = and_masks(infi_mask2(self.lengths), self.mask_mod)
+            mask = self.mask_mod
             self.block_mask = create_block_mask(mask, B = 1, H = 1, Q_LEN = pad_q, KV_LEN = L, device = 'cuda', _compile = True)
             print(f"{self.block_mask}")
         else:
@@ -203,7 +205,13 @@ class FlexAttn(nn.Module):
 
 
     def forward(self, q, k, v, scale = None):
-        if self.auto_padding:
+        if self.use_flash:
+            q_tp = q.transpose(1, 2)
+            k_tp = k.transpose(1, 2)
+            v_tp = v.transpose(1, 2)
+            oup = flash_attn_func(q_tp, k_tp, v_tp, dropout_p=0, softmax_scale=scale)
+            oup = oup.transpose(1, 2)
+        elif self.auto_padding:
             q_pad_len = (128 - q.shape[-2] % 128) % 128
             kv_pad_len = (128 - k.shape[-2] % 128) % 128
             q_pad = F.pad(q, (0, 0, 0, q_pad_len))
