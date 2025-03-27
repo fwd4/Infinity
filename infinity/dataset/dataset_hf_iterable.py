@@ -110,12 +110,30 @@ class HFIterableDatasetWrapper(IterableDataset):
                 continue
 
 if __name__ == "__main__":
-    # Example usage
+    import argparse
+    
+    parser = argparse.ArgumentParser(description='HuggingFace Dataset Loader')
+    parser.add_argument('--dataset_name', type=str, 
+                       default="kakaobrain/coyo-700m",
+                       help='Name of the dataset on HuggingFace Hub')
+    parser.add_argument('--image_column', type=str, 
+                       default="image",
+                       help='Name of the column containing image data')
+    parser.add_argument('--caption_column', type=str, 
+                       default="text",
+                       help='Name of the column containing caption data')
+    parser.add_argument('--image_size', type=int, 
+                       default=512,
+                       help='Target size for both height and width')
+    
+    args = parser.parse_args()
+    
+    # Example usage with command line arguments
     dataset = HFIterableDatasetWrapper(
-        dataset_name="lambdalabs/pokemon-blip-captions",
-        image_column="image",
-        caption_column="text",
-        image_size=512,
+        dataset_name=args.dataset_name,
+        image_column=args.image_column,
+        caption_column=args.caption_column,
+        image_size=args.image_size,
         streaming=True
     )
     
