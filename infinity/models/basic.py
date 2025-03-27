@@ -282,7 +282,7 @@ class SelfAttention(nn.Module):
         # x: fp32
         B, L, C = x.shape
         
-        self.using_flash = 0
+        self.using_flash = 1
         
         # qkv: amp, bf16
         qkv = F.linear(input=x, weight=self.mat_qkv.weight, bias=torch.cat((self.q_bias, self.zero_k_bias, self.v_bias))).view(B, L, 3, self.num_heads, self.head_dim)  # BL3Hc
@@ -336,7 +336,12 @@ class SelfAttention(nn.Module):
                 kw = dict(VAR_visible_kvlen=attn_bias_or_two_vector[0], VAR_invisible_qlen=attn_bias_or_two_vector[1])
             else:                                   # inference (autoregressive sampling)
                 kw = dict()
+            # torch.cuda.synchronize()
+            # tt1 = time.time()
             oup = flash_attn_func(q.to(v.dtype), k.to(v.dtype), v, dropout_p=0, softmax_scale=self.scale, **kw)
+            # torch.cuda.synchronize()
+            # ttt1 = time.time()
+            # print(f'flash attention time: {(ttt1-tt1)*1000:.4f}ms')
             # print(oup.shape)
             oup = oup.reshape(B, L, C)
         else:

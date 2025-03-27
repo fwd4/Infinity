@@ -15,6 +15,9 @@ import torch
 import numpy as np
 from pytorch_lightning import seed_everything
 
+import sys
+path_to_add = os.path.join(os.path.dirname(os.path.abspath(__file__)), '../..') 
+sys.path.append(path_to_add)  
 from infinity.utils.csv_util import load_csv_as_dicts, write_dicts2csv_file
 from tools.run_infinity import *
 from conf import HF_TOKEN, HF_HOME
