@@ -3,8 +3,9 @@
 set -x
 
 # set dist args
-# SINGLE=1
-nproc_per_node=${ARNOLD_WORKER_GPU}
+SINGLE=1
+export CUDA_VISIBLE_DEVICES=0,2,3,4  
+nproc_per_node=4
 
 if [ ! -z "$SINGLE" ] && [ "$SINGLE" != "0" ]; then
   echo "[single node alone] SINGLE=$SINGLE"
@@ -51,7 +52,7 @@ export CUDA_TIMER_STREAM_KAFKA_TOPIC=megatron_cuda_timer_tracing_original_v2
 export PYTORCH_CUDA_ALLOC_CONF="expandable_segments:True"
 
 wandb offline
-exp_name=debug
+exp_name=infinity_2B_pn_1M
 bed_path=checkpoints/${exp_name}/
 data_path='data/infinity_toy_data/splits'
 video_data_path=''
@@ -79,6 +80,7 @@ train.py \
 --alng=5e-06 \
 --saln=1 \
 --cos=1 \
+--rush_resume='/share/public/public_models/Infinity/infinity_2b_reg.pth' \
 --enable_checkpointing=full-block \
 --local_out_path ${local_out_path} \
 --task_type='t2i' \
@@ -87,7 +89,7 @@ train.py \
 --video_data_path=${video_data_path} \
 --exp_name=${exp_name} \
 --tblr=6e-3 \
---pn 0.06M \
+--pn 1M \
 --model=2bc8 \
 --lbs=4 \
 --workers=8 \
@@ -96,9 +98,9 @@ train.py \
 --use_streaming_dataset 1 \
 --iterable_data_buffersize 30000 \
 --Ct5=2048 \
---t5_path=weights/flan-t5-xl \
+--t5_path='/share/public/public_models/flan-t5-xl' \
 --vae_type 32 \
---vae_ckpt=weights/infinity_vae_d32_rdn_short.pth  \
+--vae_ckpt='/share/public/public_models/Infinity/infinity_vae_d32reg.pth'  \
 --wp 0.00000001 \
 --wpe=1 \
 --dynamic_resolution_across_gpus 1 \

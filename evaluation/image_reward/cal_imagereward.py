@@ -14,6 +14,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     image_reward_model = RM.load("ImageReward-v1.0")
+
     clip_model = RM.load_score("CLIP")
 
     with open(args.meta_file, 'r') as f:

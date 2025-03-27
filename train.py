@@ -21,6 +21,10 @@ from torch.utils.data import DataLoader
 from transformers import AutoTokenizer, T5EncoderModel, T5TokenizerFast
 import torch.distributed as tdist
 
+# import sys
+# path_to_add = os.path.join(os.path.dirname(os.path.abspath(__file__)), ) 
+# sys.path.append(path_to_add)  
+
 import infinity.utils.dist as dist
 from infinity.dataset.build import build_t2i_dataset
 from infinity.utils.save_and_load import CKPTSaver, auto_resume
@@ -31,6 +35,7 @@ enable_timeline_sdk = False
 
 def build_everything_from_args(args: arg_util.Args, saver):
     # set seed
+    # print(args)
     args.set_initial_seed(benchmark=True)
     if args.seed is not None and not args.rand: # check the randomness
         misc.check_randomness(args)
@@ -542,7 +547,7 @@ wait1 = os.path.join(os.path.expanduser('~'), 'wait1')
 def main():     # # 'pt_le_ft' in train_vae.py is the same as 'pt_le_ft' in train_gpt.py
     if dist.is_local_master(): misc.os_system(f'touch {wait1}')
     args: arg_util.Args = arg_util.init_dist_and_get_args()
-    
+    # print(args)
     main_train(args)
     
     args.remain_time, args.finish_time = '-', time.strftime("%Y-%m-%d %H:%M", time.localtime(time.time() - 60))

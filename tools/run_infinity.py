@@ -19,6 +19,7 @@ from transformers import AutoTokenizer, T5EncoderModel, T5TokenizerFast
 from PIL import Image, ImageEnhance
 import torch.nn.functional as F
 from torch.cuda.amp import autocast
+import cupy
 
 import sys
 path_to_add = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..') 
@@ -88,6 +89,7 @@ def gen_one_img(
     text_tokenizer,
     text_encoder,
     prompt, 
+    category=None,
     cfg_list=[],
     tau_list=[],
     negative_prompt='',
@@ -127,11 +129,15 @@ def gen_one_img(
     # record_shapes = True,
     # with_stack = True
     # ) as prof:
+    # if category == 'macro_closeup':
+    #     cupy.cuda.profiler.start()
+    #     cupy.cuda.nvtx.RangePush("autoregressive_infer_cfg")
     with torch.cuda.amp.autocast(enabled=True, dtype=torch.bfloat16, cache_enabled=True):
         stt = time.time()
         _, _, img_list = infinity_test.autoregressive_infer_cfg(
             vae=vae,
             scale_schedule=scale_schedule,
+            category=category,
             label_B_or_BLT=text_cond_tuple, g_seed=g_seed,
             B=1, negative_label_B_or_BLT=negative_label_B_or_BLT, force_gt_Bhw=None,
             cfg_sc=cfg_sc, cfg_list=cfg_list, tau_list=tau_list, top_k=top_k, top_p=top_p,
@@ -143,6 +149,10 @@ def gen_one_img(
             sampling_per_bits=sampling_per_bits,
             verbose=verbose,
         )
+    
+    # if category == 'macro_closeup':
+    #     cupy.cuda.nvtx.RangePop()
+    #     cupy.cuda.profiler.stop()
     print(f"cost: {time.time() - sstt}, infinity cost={time.time() - stt}")
     img = img_list[0]
     return img

@@ -1,10 +1,11 @@
 """
 Definition of Infinity transformer model.
 """
-
+import matplotlib.pyplot as plt
 import math
 import random
 import time
+import pickle
 from contextlib import nullcontext
 from functools import partial
 from typing import List, Optional, Tuple, Union, Dict, Any
@@ -28,21 +29,74 @@ import matplotlib.pyplot as plt
 import seaborn as sns  
 from matplotlib.backends.backend_pdf import PdfPages  
 
-def print_diff(diff_avg):
-    avg_max = diff_avg.max().item()  
-    avg_min = diff_avg.min().item()  
+def cosine_similarity(matrix1, matrix2):  
+    # 展平矩阵为1D向量  
+    vector1 = matrix1.flatten()  
+    vector2 = matrix2.flatten()  
+    
+    # 计算点积  
+    dot_product = torch.dot(vector1, vector2)  
+
+    # 计算向量的范数  
+    norm1 = torch.linalg.norm(vector1)  
+    norm2 = torch.linalg.norm(vector2)  
+
+    # 计算余弦相似度  
+    similarity = dot_product / (norm1 * norm2)  
+
+    return similarity
+
+def cosine_similarity(matrix1, matrix2):  
+
+    # 归一化矩阵的每一行（转换为单位向量）  
+    norm1 = torch.linalg.norm(matrix1, dim=1, keepdim=True)  
+    norm2 = torch.linalg.norm(matrix2, dim=1, keepdim=True)  
+    
+    matrix1_normalized = matrix1 / norm1  
+    matrix2_normalized = matrix2 / norm2  
+    
+    # 计算余弦相似度矩阵  
+    similarity_matrix = torch.mm(matrix1_normalized, matrix2_normalized.T)  
+    
+    return similarity_matrix
+
+def compute_diff_ratio(last_stage, diff):
+    # last_stage_max = last_stage.max().item()  
+    # last_stage_min = last_stage.min().item()
+    # last_stage_mean = last_stage.mean().item()  # 计算均值
+    # last_stage_median = last_stage.median().item()  # 计算中位数
+    # avg_max = diff.max().item()  
+    # avg_min = diff.min().item()  
+    # diff_mean = diff.mean().item()  # 计算均值
+    # diff_median = diff.median().item()  # 计算中位数
 
     # 计算小于0.1和0.01的百分比  
-    diff_avg_np = diff_avg.detach().cpu().numpy() 
-    total_elements = diff_avg_np.size  
-    less_than_01 = np.sum(diff_avg_np < 0.1)  
-    less_than_001 = np.sum(diff_avg_np < 0.01)  
+    total_elements = diff.numel()  
+    less_than_01 = (diff < 0.1).sum().item()  
+    less_than_005 = (diff < 0.05).sum().item()  
+    less_than_001 = (diff < 0.01).sum().item()  
 
     percent_less_01 = (less_than_01 / total_elements) * 100  
+    percent_less_005 = (less_than_005 / total_elements) * 100 
     percent_less_001 = (less_than_001 / total_elements) * 100 
-    print(f'Average Difference\nMax: {avg_max:.2e}, Min: {avg_min:.2e}, <0.1: {percent_less_01:.2f}%, <0.01: {percent_less_001:.2f}%')
 
-def plot_three_heatmaps(diff_avg, title, pdf):  
+    relative_diff = diff / last_stage.abs()
+    less_than_10_percent = (relative_diff < 0.1).sum().item()  
+    less_than_5_percent = (relative_diff < 0.05).sum().item()  
+    less_than_1_percent = (relative_diff < 0.01).sum().item()  
+
+    percent_less_10 = (less_than_10_percent / total_elements) * 100  
+    percent_less_5 = (less_than_5_percent / total_elements) * 100 
+    percent_less_1 = (less_than_1_percent / total_elements) * 100 
+
+    
+    # print(f"Self Value Max: {last_stage_max:.2e}, Min: {last_stage_min:.2e}, Mean: {last_stage_mean:.2e}, Median: {last_stage_median:.2e}, "
+    #    f'Average Difference Max: {avg_max:.2e}, Min: {avg_min:.2e}, Mean: {diff_mean:.2e}, Median: {diff_median:.2e} ,'
+    #    f'<10: {percent_less_10:.2f}%, <5: {percent_less_5:.2f}%, <1: {percent_less_1:.2f}% ' 
+    #    f'<0.1: {percent_less_01:.2f}%, <0.05: {percent_less_005:.2f}%, <0.01: {percent_less_001:.2f}% ')
+    return percent_less_10
+
+def plot_three_heatmaps(diff, title, pdf):  
     """  
     绘制三张并排的热力图, 显示两个batch的差异和平均值  
     """   
@@ -53,14 +107,14 @@ def plot_three_heatmaps(diff_avg, title, pdf):
     # batch1_min = diff_batch1.min().item()  
     # batch2_max = diff_batch2.max().item()  
     # batch2_min = diff_batch2.min().item()  
-    avg_max = diff_avg.max().item()  
-    avg_min = diff_avg.min().item()  
+    avg_max = diff.max().item()  
+    avg_min = diff.min().item()  
 
     # 计算小于0.1和0.01的百分比  
-    diff_avg_np = diff_avg.detach().cpu().numpy() 
-    total_elements = diff_avg_np.size  
-    less_than_01 = np.sum(diff_avg_np < 0.1)  
-    less_than_001 = np.sum(diff_avg_np < 0.01)  
+    diff_np = diff.detach().cpu().numpy() 
+    total_elements = diff_np.size  
+    less_than_01 = np.sum(diff_np < 0.1)  
+    less_than_001 = np.sum(diff_np < 0.01)  
 
     percent_less_01 = (less_than_01 / total_elements) * 100  
     percent_less_001 = (less_than_001 / total_elements) * 100 
@@ -83,7 +137,7 @@ def plot_three_heatmaps(diff_avg, title, pdf):
 
     
 
-    sns.heatmap(diff_avg_np,     
+    sns.heatmap(diff_np,     
                 ax=ax,  # 指定要绘制的轴  
                 annot=False,   
                 fmt='.2e',   
@@ -545,6 +599,7 @@ class Infinity(nn.Module):
         self,
         vae=None,
         scale_schedule=None,
+        category=None,
         label_B_or_BLT=None,
         B=1, negative_label_B_or_BLT=None, force_gt_Bhw=None,
         g_seed=None, cfg_list=[], tau_list=[], cfg_sc=3, top_k=0, top_p=0.0,
@@ -634,8 +689,27 @@ class Infinity(nn.Module):
         # tt1 = time.time() * 1e3
 
         # backbone_time = []
+        # 用于存储每个scale的block_number和MSE值
+        # mse_data = {si: [] for si in range(len(scale_schedule))}
+        # diff_data = {block_idx: [] for block_idx in range(len(self.block_chunks)*4)}
+        loss_data = {si: [] for si in range(len(scale_schedule))}
+        loss_func = 'diff_ratio'
+        #skip_list= [[31,30,25,14,29,26],[26,27,28,29,30,31],[16,17,18,19,20,21]]
+        #skip_choice = 2
+        skip_mode = False
+        compute_loss = False
+        save_codes = False
+        with open('skip_list.pkl', 'rb') as f:
+            skip_list = pickle.load(f)
+        profile = False
+
+        # 用于存储每个scale的codes和summed_codes
+        codes_data = {si: [] for si in range(len(scale_schedule))}
+        summed_codes_data = {si: [] for si in range(len(scale_schedule))}
+
         for si, pn in enumerate(scale_schedule):   # si: i-th segment
-            # t0 = time.time() * 1e3
+            if profile:
+                t0 = time.time() * 1e3
             import os
             # pdf_filename = os.path.join('/home/xujiaming/xujiaming/train_machine/lyx/Infinity/outputs/profile', f'heatmap_scale_{si}.pdf')  
             # pdf_filename = f'heatmap_scale_{si}.pdf'  
@@ -654,12 +728,16 @@ class Infinity(nn.Module):
                 #     last_stage = F.pad(last_stage, (0, 0, 0, need_to_pad))
                 attn_fn = self.attn_fn_compile_dict.get(tuple(scale_schedule[:(si+1)]), None)
 
-            # t1 = time.time() * 1e3
+            if profile:
+                t1 = time.time() * 1e3
             # assert self.attn_bias_for_masking[:, :, last_L:cur_L, :cur_L].sum() == 0, f'AR with {(self.attn_bias_for_masking[:, :, last_L:cur_L, :cur_L] != 0).sum()} / {self.attn_bias_for_masking[:, :, last_L:cur_L, :cur_L].numel()} mask item'
             layer_idx = 0
             # layer_time = []
             #print(self.block_chunks)
 
+            # print('++++++++++++++++++++++++++++++++++')
+            # print(self.block_chunks)
+            # print('++++++++++++++++++++++++++++++++++')
 
             for block_idx, b in enumerate(self.block_chunks):
                 # ttt0 = time.time() * 1e3
@@ -669,44 +747,56 @@ class Infinity(nn.Module):
                 if not self.add_lvl_embeding_only_first_block: 
                     last_stage = self.add_lvl_embeding(last_stage, si, scale_schedule, need_to_pad=need_to_pad)
 
-                # print('++++++++++++++++++++++++++++++++++')
-                # print(b.module)
-                # print('++++++++++++++++++++++++++++++++++')
+                for ii, m in enumerate(b.module):     #for m in b.module
+                    block_number = block_idx * 4 + ii
+                    # if skip_mode == True:
+                    #     if si >= 2 and block_number in skip_list[si]:
+                    #         continue
+                    # if si >= 2 and block_number >= 26:
+                    #     continue                    
 
-                for i, m in enumerate(b.module):     #for m in b.module:
                     current_stage = last_stage.clone()  
+                    # torch.cuda.synchronize()
                     # tt = time.time()
                     last_stage = m(x=last_stage, cond_BD=cond_BD_or_gss, ca_kv=ca_kv, attn_bias_or_two_vector=None, attn_fn=attn_fn, scale_schedule=scale_schedule, rope2d_freqs_grid=self.rope2d_freqs_grid, scale_ind=si)
-                    # layer_time.append((time.time() - tt) * 1e3)
-                    # if si == 12 and verbose:
-                    #     print(layer_idx, (time.time() - tt)* 1e3, last_stage.shape)
+                    # torch.cuda.synchronize()
+                    # ttt = time.time()
+                    # if si == 12:
+                    #     print(f"Scale {si}, Block {block_number} shape: {current_stage.shape} time:{(ttt - tt)*1000:.2f}ms")
+                    if compute_loss:
+                        if loss_func == 'MSE':                    
+                            # 计算 current_stage 和 last_stage 的 MSE
+                            mse = F.mse_loss(current_stage, last_stage)
+                            #mse_data[si].append((block_number, mse.item()))
+                            loss = mse.item()
+                        elif loss_func == 'relative_diff':
+                            # 计算平均差值  
+                            diff = (last_stage - current_stage).abs().reshape(-1,last_stage.shape[-1])  
+                            sim = diff.sum()/last_stage.abs().sum()
+                            loss = sim
+                        elif loss_func == 'cosine_similarity':
+                            similarity = cosine_similarity(current_stage[0], last_stage[0])
+                            loss = similarity   
+                        elif loss_func == 'diff_ratio':
+                            diff = (last_stage - current_stage).abs().reshape(-1,last_stage.shape[-1])  
+                            loss = compute_diff_ratio(last_stage.abs().reshape(-1,last_stage.shape[-1]), diff)     
+
+                        loss_data[si].append(loss)
+                        
+
                     if (cfg != 1) and (layer_idx in abs_cfg_insertion_layers):
                         # print(f'add cfg={cfg} on {layer_idx}-th layer output')
                         last_stage = cfg * last_stage[:B] + (1-cfg) * last_stage[B:]
                         last_stage = torch.cat((last_stage, last_stage), 0)
-                    layer_idx += 1
-                    # diff = (last_stage - current_stage).abs()
-                    # diff_batch1 = (last_stage[0] - current_stage[0]).abs() 
-                    # diff_batch2 = (last_stage[1] - current_stage[1]).abs()
-                    # 计算平均差值  
-                    diff_avg = (last_stage - current_stage).abs().mean(0) 
-                    print(diff_avg.shape)
-                    print_diff(diff_avg)
-                    # 绘制三张热力图  
-                    # plot_three_heatmaps(  
-                    #     # diff_batch1,  
-                    #     # diff_batch2,  
-                    #     diff_avg,  
-                    #     f'Scale {si}, Block {i} Difference',  
-                    #     pdf  
-                    # )                  
+                    layer_idx += 1                
 
                 # ttt1 = time.time() * 1e3
                 #print(f"block {block_idx} exec: {ttt1 - ttt0:.2f}ms")
 
             # pdf.close()  
             # backbone_time.append(layer_time)
-            # t2 = time.time() * 1e3
+            if profile:
+                t2 = time.time() * 1e3
             
             if (cfg != 1) and add_cfg_on_logits:
                 # print(f'add cfg on add_cfg_on_logits')
@@ -759,14 +849,33 @@ class Infinity(nn.Module):
                 if si != num_stages_minus_1:
                     accu_BChw, last_stage = self.quant_only_used_in_inference[0].one_step_fuse(si, num_stages_minus_1+1, accu_BChw, h_BChw, scale_schedule)
             
+            codes_data[si].append(codes.cpu().numpy())
+            summed_codes_data[si].append(summed_codes.cpu().numpy())
+
             if si != num_stages_minus_1:
                 last_stage = self.word_embed(self.norm0_ve(last_stage))
                 last_stage = last_stage.repeat(bs//B, 1, 1)
 
-            # t3 = time.time() * 1e3
-            # print(f"stage {si}, {pn}, all {t3 - t0:.2f}ms, {t1 - t0:.2f}ms, 32block {t2 - t1:.2f}ms, {t3 - t2:.2f}ms")
+            if profile:
+                t3 = time.time() * 1e3
+                print(f"stage {si}, {pn}, all {t3 - t0:.2f}ms, {t1 - t0:.2f}ms, 32block {t2 - t1:.2f}ms, {t3 - t2:.2f}ms")
         #     #get_torch_mem_usage()
         # tt2 = time.time() * 1e3
+
+        # 将 codes_data 和 summed_codes_data 合并到一个字典中
+        combined_data = {
+            'codes_data': codes_data,
+            'summed_codes_data': summed_codes_data
+        }
+        if save_codes:
+            # 保存 combined_data 到 pkl 文件
+            with open(f'outputs/codes/p2_combined_data_{category}.pkl', 'wb') as f:
+                pickle.dump(combined_data, f)
+        
+        # 保存 loss_data 到 pkl 文件
+        if compute_loss:
+            with open(f'outputs/loss/loss_data_{category}.pkl', 'wb') as f:
+                pickle.dump(loss_data, f)
 
         if inference_mode:
             for b in self.unregistered_blocks: (b.sa if isinstance(b, CrossAttnBlock) else b.attn).kv_caching(False)
@@ -915,7 +1024,7 @@ def get_params_num(d, w, mlp):
     return f'{s/1e9:.2f}B'
 
 
-TIMM_KEYS = {'img_size', 'pretrained', 'pretrained_cfg', 'pretrained_cfg_overlay', 'global_pool'}
+TIMM_KEYS = {'img_size', 'pretrained', 'pretrained_cfg', 'pretrained_cfg_overlay', 'global_pool','cache_dir'}
 
 @register_model
 def infinity_2b(depth=32, embed_dim=2048, num_heads=2048//128, drop_path_rate=0.1, **kwargs): return Infinity(depth=depth, embed_dim=embed_dim, num_heads=num_heads, mlp_ratio=4, drop_path_rate=drop_path_rate, **{k: v for k, v in kwargs.items() if k not in TIMM_KEYS})

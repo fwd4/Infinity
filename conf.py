@@ -1,4 +1,4 @@
-HF_TOKEN = '[YOUR HF_TOKEN]'
-HF_HOME = '[YOUR HF_HOME]'
+HF_TOKEN = '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'
+HF_HOME = '/home/model_data/.cache/huggingface'
 
-GPT_AK = '[YOUR GPT_AK]'
+GPT_AK = ''

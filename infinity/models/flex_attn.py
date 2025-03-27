@@ -174,8 +174,8 @@ class FlexAttn(nn.Module):
             self.mask_mod = _generate_var_infer_mask_with_kv_cache(self.lengths)
             # print(B, H, L, self.lengths[-2:])
             pad_q = ((self.lengths[-1] + 127) // 128) * 128
-            mask = and_masks(infi_mask(self.lengths), self.mask_mod)
-            # mask = self.mask_mod
+            # mask = and_masks(infi_mask(self.lengths), self.mask_mod)
+            mask = self.mask_mod
             self.block_mask = create_block_mask(mask, B = 1, H = 1, Q_LEN = pad_q, KV_LEN = L, device = 'cuda', _compile = True)
             # print(f"{self.block_mask}")
         else:
