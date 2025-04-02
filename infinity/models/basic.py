@@ -205,7 +205,7 @@ class SelfAttention(nn.Module):
     def __init__(
         self, embed_dim=768, num_heads=12,
         proj_drop=0., tau=1, cos_attn=False, customized_flash_attn=True, use_flex_attn=False, 
-        batch_size=2, pad_to_multiplier=1, rope2d_normalized_by_hw=0,
+        batch_size=2, pad_to_multiplier=1, rope2d_normalized_by_hw=0, kv_opt=False, sink_stage=-2,
     ):
         """
         :param embed_dim: model's width
@@ -218,6 +218,8 @@ class SelfAttention(nn.Module):
         super().__init__()
         assert embed_dim % num_heads == 0
         self.using_flash = customized_flash_attn
+        self.kv_opt = kv_opt
+        self.sink_stage = sink_stage
         
         self.num_heads, self.head_dim = num_heads, embed_dim // num_heads
         self.tau, self.cos_attn = tau, cos_attn
@@ -281,6 +283,7 @@ class SelfAttention(nn.Module):
         """
         # x: fp32
         B, L, C = x.shape
+        sink_rb = sum( pt * ph * pw for pt, ph, pw in scale_schedule[:self.sink_stage+1])
         
         # self.using_flash = 0
         
@@ -316,7 +319,7 @@ class SelfAttention(nn.Module):
                 self.cached_k = k; self.cached_v = v
                 #self.cached_k_ = k_; self.cached_v_ = v_
             #elif self.use_flex_attn and self.cached_k.shape[L_dim] >= 921:
-            elif self.cached_k.shape[L_dim] >= 1497:
+            elif self.cached_k.shape[L_dim] >= sink_rb and self.kv_opt:
             #elif self.cached_k.shape[L_dim] >= 921:
             # elif self.cached_k.shape[L_dim] >= 521:
             #elif self.cached_k.shape[L_dim] >= 265:
@@ -460,13 +463,14 @@ class SelfAttnBlock(nn.Module):
         self, embed_dim, kv_dim, cross_attn_layer_scale, cond_dim, act: bool, shared_aln: bool, norm_layer: partial,
         num_heads, mlp_ratio=4., drop=0., drop_path=0., tau=1, cos_attn=False,
         swiglu=False, customized_flash_attn=False, fused_mlp=False, fused_norm_func=None, checkpointing_sa_only=False,
+        kv_opt=False, sink_stage=-2
     ):
         super(SelfAttnBlock, self).__init__()
         self.C, self.D = embed_dim, cond_dim
         self.drop_path_rate = drop_path
         self.drop_path = DropPath(drop_path) if drop_path > 0. else nn.Identity()
         self.attn = SelfAttention(
-            embed_dim=embed_dim, num_heads=num_heads, proj_drop=drop, tau=tau, cos_attn=cos_attn, customized_flash_attn=customized_flash_attn, attn_fn = attn_fn
+            embed_dim=embed_dim, num_heads=num_heads, proj_drop=drop, tau=tau, cos_attn=cos_attn, customized_flash_attn=customized_flash_attn, attn_fn = attn_fn, kv_opt=kv_opt, sink_stage=sink_stage
         )
         self.using_swiglu = swiglu
         self.ffn = (FFNSwiGLU if swiglu else FFN)(in_features=embed_dim, hidden_features=round(embed_dim * mlp_ratio / 256) * 256, drop=drop, fused_mlp=fused_mlp)
@@ -509,6 +513,7 @@ class CrossAttnBlock(nn.Module):
         num_heads, mlp_ratio=4., drop=0., drop_path=0., tau=1, cos_attn=False,
         swiglu=False, customized_flash_attn=False, fused_mlp=False, fused_norm_func=None, checkpointing_sa_only=False,
         use_flex_attn=False, batch_size=2, pad_to_multiplier=1, apply_rope2d=False, rope2d_normalized_by_hw=False,
+        kv_opt=False, sink_stage=-2,
     ):
         super(CrossAttnBlock, self).__init__()
         self.C, self.D = embed_dim, cond_dim
@@ -517,6 +522,7 @@ class CrossAttnBlock(nn.Module):
         self.sa = SelfAttention(
             embed_dim=embed_dim, num_heads=num_heads, proj_drop=drop, tau=tau, cos_attn=cos_attn, customized_flash_attn=customized_flash_attn,
             use_flex_attn=use_flex_attn, batch_size=batch_size, pad_to_multiplier=pad_to_multiplier, rope2d_normalized_by_hw=rope2d_normalized_by_hw,
+            kv_opt=kv_opt, sink_stage=sink_stage
         )
         self.ca = CrossAttention(embed_dim=embed_dim, kv_dim=kv_dim, num_heads=num_heads, proj_drop=drop, cos_attn=cos_attn)
         self.using_swiglu = swiglu

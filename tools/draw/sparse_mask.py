@@ -27,28 +27,33 @@ def create_sparse_matrix(kv_opt: bool):
     return matrix
 
 
-def plot_and_save(kv_opt):
+def plot_and_save(kv_opt, blocksize=(16, 16)):
     # 创建矩阵
     sparse_matrix = create_sparse_matrix(kv_opt)
 
     # 转换为CSR格式
     csr_matrix = sparse.csr_matrix(sparse_matrix)
+    
+    # 转换为BSR格式
+    bsr_matrix = sparse.bsr_matrix(csr_matrix, blocksize=blocksize)
 
     # 保存为npz文件
-    sparse.save_npz(f'sparse_matrix_kv_opt{kv_opt}.npz', csr_matrix)
+    sparse.save_npz(f'sparse_matrix_kv_opt{kv_opt}_bsr.npz', bsr_matrix)
 
     # 打印基本信息
     print(f"矩阵形状: {sparse_matrix.shape}")
+    print(f"BSR 块大小: {blocksize}")
+    print(f"BSR 矩阵形状: {bsr_matrix.shape}")
+    print(f"非零块数量: {bsr_matrix.nnz}")
     print(f"非零元素比例: {np.count_nonzero(sparse_matrix) / sparse_matrix.size:.4f}")
-    print(f"非零元素数量: {np.count_nonzero(sparse_matrix)}")
 
     # 可视化稀疏矩阵
     import matplotlib.pyplot as plt
 
     plt.figure(figsize=(20, 20))
-    plt.spy(sparse_matrix, markersize=0.1)
-    plt.title("Sparse Matrix Visualization")
-    plt.savefig(f'sparse_matrix_kv_opt{kv_opt}.png', dpi=300, bbox_inches='tight')
+    plt.spy(bsr_matrix, markersize=0.1)
+    plt.title(f"Block Sparse Matrix Visualization (Block size: {blocksize})")
+    plt.savefig(f'sparse_matrix_kv_opt{kv_opt}_bsr.png', dpi=300, bbox_inches='tight')
     plt.close()
 
 plot_and_save(1)

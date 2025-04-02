@@ -109,8 +109,12 @@ class Infinity(nn.Module):
         always_training_scales=20,
         apply_spatial_patchify = 0,
         inference_mode=False,
+        sink_stage=8,
+        kv_opt=True,
     ):
         # set hyperparameters
+        self.sink_stage = sink_stage
+        self.kv_opt = kv_opt
         self.C = embed_dim
         self.inference_mode = inference_mode
         self.apply_spatial_patchify = apply_spatial_patchify
@@ -267,6 +271,7 @@ class Infinity(nn.Module):
                 swiglu=swiglu, customized_flash_attn=self.customized_flash_attn, fused_mlp=fused_mlp, fused_norm_func=fused_norm_func,
                 checkpointing_sa_only=self.checkpointing == 'self-attn',
                 use_flex_attn=use_flex_attn, batch_size=batch_size, pad_to_multiplier=pad_to_multiplier, rope2d_normalized_by_hw=rope2d_normalized_by_hw,
+                kv_opt=self.kv_opt, sink_stage=self.sink_stage
             )
             self.unregistered_blocks.append(block)
         
@@ -317,18 +322,26 @@ class Infinity(nn.Module):
                 scale_schedule = full_scale_schedule[:scales_num]
                 scale_schedule = [ (min(t, self.video_frames//4+1), h, w) for (t,h, w) in scale_schedule]
                 patchs_nums_tuple = tuple(scale_schedule)
+                sink_stage = self.sink_stage if self.sink_stage > 0 else self.sink_stage + len(full_scale_schedule)
                 # For kv-cache opt
-                SEQ_L = sum( pt * ph * pw for pt, ph, pw in patchs_nums_tuple[:7])
-                if len(patchs_nums_tuple) > 7:
-                    pt, ph, pw = patchs_nums_tuple[-1]
-                    SEQ_L += pt * ph * pw
-                aligned_L = SEQ_L+ (self.pad_to_multiplier - SEQ_L % self.pad_to_multiplier) if SEQ_L % self.pad_to_multiplier != 0 else SEQ_L
-                print(SEQ_L, aligned_L, patchs_nums_tuple)
+                rb = max(1, min(sink_stage + 1, scales_num))
+                pt, ph, pw = patchs_nums_tuple[-1]
+                Q_L = pt*ph*pw
+                if self.kv_opt:
+                    KV_L = sum( pt * ph * pw for pt, ph, pw in patchs_nums_tuple[:rb])
+                    if sink_stage + 1 < scales_num:
+                        KV_L += Q_L
+                else:
+                    KV_L = sum( pt * ph * pw for pt, ph, pw in patchs_nums_tuple) 
+                #aligned_L = SEQ_L+ (self.pad_to_multiplier - SEQ_L % self.pad_to_multiplier) if SEQ_L % self.pad_to_multiplier != 0 else SEQ_L
+                #print(SEQ_L, aligned_L, patchs_nums_tuple)
                 attn_fn = FlexAttn(block_scales = patchs_nums_tuple,
                                         mask_type = mask_type,
                                         B = self.batch_size, 
                                         H = self.num_heads,
-                                        L = aligned_L,
+                                        Q_L = Q_L, KV_L = KV_L,
+                                        kv_sink_stage = sink_stage,
+                                        kv_opt = self.kv_opt,
                                         auto_padding=auto_padding)
                 attn_fn_compile_dict[patchs_nums_tuple] = attn_fn
 

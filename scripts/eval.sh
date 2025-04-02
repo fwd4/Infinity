@@ -206,7 +206,7 @@ text_channels=2048
 apply_spatial_patchify=0
 cfg_insertion_layer=0
 sub_fix=cfg${cfg}_tau${tau}_cfg_insertion_layer${cfg_insertion_layer}
-use_flex_attn=0
+use_flex_attn=1
 prefix=1497
 
 
@@ -232,7 +232,7 @@ case $task in
         break
         ;;
     gen_eval)
-        rewrite_prompt=1
+        rewrite_prompt=2
         out_dir="${out_dir_root}/gen_eval_${sub_fix}_rewrite_prompt${rewrite_prompt}_flex_attn${use_flex_attn}_round2_real_rewrite_prefix${prefix}"
         test_gen_eval
         break

@@ -31,7 +31,7 @@ if __name__ == '__main__':
     parser.add_argument('--outdir', type=str, default='')
     parser.add_argument('--n_samples', type=int, default=4)
     parser.add_argument('--metadata_file', type=str, default='evaluation/gen_eval/prompts/evaluation_metadata.jsonl')
-    parser.add_argument('--rewrite_prompt', type=int, default=0, choices=[0,1])
+    parser.add_argument('--rewrite_prompt', type=int, default=0, choices=[0,1,2])
     parser.add_argument('--load_rewrite_prompt_cache', type=int, default=1, choices=[0,1])
     args = parser.parse_args()
 
@@ -142,4 +142,5 @@ if __name__ == '__main__':
         with open(prompt_rewrite_cache_file, 'w') as f:
             json.dump(prompt_rewrite_cache, f, indent=2)
     
-    print(f"img_cnt: {len(images)}, cost: {np.mean(COST[1:])}, infinity cost={np.mean(INFI_COST[1:])}")
+    with open(os.path.join(outpath, "perf.log"), "w") as fp:
+        fp.write(f"img_cnt: {len(images)}, cost: {np.mean(COST[1:])}, infinity cost={np.mean(INFI_COST[1:])}")

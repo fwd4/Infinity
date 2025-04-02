@@ -85,9 +85,6 @@ pix = torch.tensor(pix, device='cuda')
 
 MASK_RIGHT=6
 
-def infi_const_mask(b, h, q_idx, kv_idx):
-    return kv_idx <= qlen[-MASK_RIGHT-1]
-
 def infi_mask(lengths):
     n_mask_stages = max(0, len(lengths) - len(pix) + MASK_RIGHT)
     last_stage = len(lengths) - 1
@@ -110,15 +107,19 @@ def infi_mask(lengths):
     #return or_masks(*stage_masks, infi_const_mask)
 
 
-def infi_mask2(lengths):
+def infi_mask2(lengths, offsets, sink_stage, kv_opt=False):
     n_mask_stages = 0
-    last_stage = len(lengths) - 1
-    row_affinity = pix[last_stage] ** 2 // 8
+    row_affinity = lengths[-1] // 8
+    sink_rb = offsets[-1] if sink_stage+1 >= len(offsets) else offsets[sink_stage+1]
+    diag_mask_offset = sink_rb if kv_opt else offsets[-2]
+    print(f"kv_opt: {kv_opt}, sink_stage: {sink_stage}, sink_rb: {sink_rb}, diag_mask_offset: {diag_mask_offset}")
+    def infi_const_mask(b, h, q_idx, kv_idx):
+        return kv_idx <= sink_rb
     def lbound(b, h, q_idx, kv_idx):
-        left_distance = kv_idx - qlen[-MASK_RIGHT-1]
+        left_distance = kv_idx - diag_mask_offset
         return q_idx - left_distance < row_affinity
     def rbound(b, h, q_idx, kv_idx):
-        left_distance = kv_idx - qlen[-MASK_RIGHT-1]
+        left_distance = kv_idx - diag_mask_offset
         return -q_idx + left_distance < row_affinity
     return or_masks(infi_const_mask, and_masks(lbound, rbound))
 
@@ -157,7 +158,7 @@ def infi_mask2(lengths):
 
 class FlexAttn(nn.Module):
     def __init__(
-            self, block_scales:list, mask_type:str, B, H, L:int, auto_padding=False
+            self, block_scales:list, mask_type:str, B, H, Q_L, KV_L:int, auto_padding=False, kv_sink_stage=-2, kv_opt=False
     ):
         """
         :param block_scales: accept VAR's block sizes like [(1,1), (2,2), (3,3)]
@@ -170,8 +171,10 @@ class FlexAttn(nn.Module):
         if not flex_attention_available:
             raise NotImplementedError((f"[Error] flex attention need pytorch 2.5.0+ but your version is {torch.__version__}"))
 
+        self.kv_sink_stage = kv_sink_stage
+        self.kv_opt = kv_opt
         self.support_mask_type = ["var", "causal", "var_infer_mask_with_kv_cache"]
-        self.auto_padding = auto_padding
+        self.auto_padding = False #auto_padding #False
 
         self.flex_attention = torch.compile(flex_attention)
 
@@ -180,11 +183,11 @@ class FlexAttn(nn.Module):
 
         self.offsets = _length_to_offsets(self.lengths, device='cuda')
 
-        self.use_flash = False #len(self.offsets) <= 10
+        self.use_flash = len(self.offsets) <= 10
 
         # if L paded to align 128, block need to cover padding area
-        if self.offsets[-1] < L:
-            self.offsets = torch.cat((self.offsets, torch.tensor([L], device='cuda')), dim=0)
+        # if self.offsets[-1] < L:
+        #     self.offsets = torch.cat((self.offsets, torch.tensor([L], device='cuda')), dim=0)
         
         if mask_type == "var":
             self.mask_mod = _generate_var_mask_mod(self.offsets)
@@ -194,11 +197,12 @@ class FlexAttn(nn.Module):
             self.block_mask = create_block_mask(self.mask_mod, B = B, H = H, Q_LEN = L, KV_LEN = L, device = 'cuda', _compile = True)
         elif mask_type == 'var_infer_mask_with_kv_cache':
             self.mask_mod = _generate_var_infer_mask_with_kv_cache(self.lengths)
-            # print(B, H, L, self.lengths[-2:])
-            pad_q = ((self.lengths[-1] + 127) // 128) * 128
-            #mask = and_masks(infi_mask2(self.lengths), self.mask_mod)
-            mask = self.mask_mod
-            self.block_mask = create_block_mask(mask, B = 1, H = 1, Q_LEN = pad_q, KV_LEN = L, device = 'cuda', _compile = True)
+            Q_LP = (Q_L + 127) // 128 * 128
+            KV_LP = (KV_L + 127) // 128 * 128
+            print(f"{Q_L}/{Q_LP}, {KV_L}/{KV_LP}", self.offsets, self.lengths)
+            mask = and_masks(infi_mask2(self.lengths, self.offsets, self.kv_sink_stage, self.kv_opt), self.mask_mod)
+            #mask = self.mask_mod
+            self.block_mask = create_block_mask(mask, B = 1, H = 1, Q_LEN = Q_L, KV_LEN = KV_L, device = 'cuda', _compile = True)
             print(f"{self.block_mask}")
         else:
             raise NotImplementedError(f"{mask_type} not supportted in FlexAttn, support type:{self.support_mask_type}")
