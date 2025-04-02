@@ -48,3 +48,6 @@ wandb
 
 infi_scores/
 conf.py
+
+!evaluation/gen_eval/prompt_rewrite_cache.json
+!evaluation/gen_eval/prompt_rewrite_cache_dsv3.json
