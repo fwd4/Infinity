@@ -6,6 +6,8 @@ import cv2
 import numpy as np
 from run_infinity import *
 from infinity.models.basic import scores_
+from tqdm import tqdm
+import datetime
 
 torch.cuda.set_device(0)
 model_path = '/workspace/Infinity/weights/infinity_2b_reg.pth'
@@ -74,48 +76,65 @@ prompts = {
 output_dir = "outputs"
 os.makedirs(output_dir, exist_ok=True)
 
+repeat = 10
+
 img_cnt = 0
+# Set total number of iterations
+total_iterations = 150
+
+timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+run_dir = osp.join(output_dir, f"run_{timestamp}")
+os.makedirs(run_dir, exist_ok=True)
+
 # GEN IMG
-for category, prompt in prompts.items():
-    cfg = 3
-    tau = 0.5
-    h_div_w = 1/1 # Aspect Ratio
-    seed = random.randint(0, 10000)
-    enable_positive_prompt = 0
+with tqdm(total=total_iterations, desc="Generating images") as pbar:
+    for iteration in range(total_iterations):
+        # Randomly select a prompt
+        category, prompt = random.choice(list(prompts.items()))
+        
+        cfg = 3
+        tau = 0.5
+        h_div_w = 1/1  # Aspect Ratio
+        seed = random.randint(0, 10000)
+        enable_positive_prompt = 0
 
-    h_div_w_template_ = h_div_w_templates[np.argmin(np.abs(h_div_w_templates-h_div_w))]
-    scale_schedule = dynamic_resolution_h_w[h_div_w_template_][args.pn]['scales']
-    scale_schedule = [(1, h, w) for (_, h, w) in scale_schedule]
+        h_div_w_template_ = h_div_w_templates[np.argmin(np.abs(h_div_w_templates-h_div_w))]
+        scale_schedule = dynamic_resolution_h_w[h_div_w_template_][args.pn]['scales']
+        scale_schedule = [(1, h, w) for (_, h, w) in scale_schedule]
 
-    # GEN
-    generated_image = gen_one_img(
-        infinity,
-        vae,
-        text_tokenizer,
-        text_encoder,
-        prompt,
-        g_seed=seed,
-        gt_leak=0,
-        gt_ls_Bl=None,
-        cfg_list=cfg,
-        tau_list=tau,
-        scale_schedule=scale_schedule,
-        cfg_insertion_layer=[args.cfg_insertion_layer],
-        vae_type=args.vae_type,
-        sampling_per_bits=args.sampling_per_bits,
-        enable_positive_prompt=enable_positive_prompt,
-        verbose=False,
-    )
-    # exit(0)
-    # img_cnt+=1
-    # if img_cnt == 2:
-    #     exit(0)
+        # Generate image
+        generated_image = gen_one_img(
+            infinity,
+            vae,
+            text_tokenizer,
+            text_encoder,
+            prompt,
+            g_seed=seed,
+            gt_leak=0,
+            gt_ls_Bl=None,
+            cfg_list=cfg,
+            tau_list=tau,
+            scale_schedule=scale_schedule,
+            cfg_insertion_layer=[args.cfg_insertion_layer],
+            vae_type=args.vae_type,
+            sampling_per_bits=args.sampling_per_bits,
+            enable_positive_prompt=enable_positive_prompt,
+            verbose=False,
+        )
 
-    # SAVE
-    save_path = osp.join(output_dir, f"re_{category}_test.jpg")
-    cv2.imwrite(save_path, generated_image.cpu().numpy())
-    print(f"{category} image saved to {save_path}")
+        # Save image
+        # Create a subfolder for this run
 
-print(f"img_cnt: {img_cnt}, cost: {np.mean(COST[1:])}, infinity cost={np.mean(INFI_COST[1:])}")
+        # Save image with unique name and check existence
+        save_path = osp.join(run_dir, f"re_{category}_test.jpg")
+        if not osp.exists(save_path):
+            cv2.imwrite(save_path, generated_image.cpu().numpy())
+        
+        # Update progress bar with current prompt
+        pbar.set_postfix({"prompt": category})
+        pbar.update(1)
+
+warpup_ratio = len(COST) // 5
+print(f"img_cnt: {len(COST[warpup_ratio:])}, cost: {np.mean(COST[warpup_ratio:])}, infinity cost={np.mean(INFI_COST[warpup_ratio:])}")
 
 # np.save('attn_time.npy', np.array(ATTN_TIME))

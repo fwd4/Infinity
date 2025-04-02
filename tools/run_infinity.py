@@ -42,7 +42,7 @@ def encode_prompt(text_tokenizer, text_encoder, prompt, enable_positive_prompt=F
         print(f'before positive_prompt aug: {prompt}')
         prompt = aug_with_positive_prompt(prompt)
         print(f'after positive_prompt aug: {prompt}')
-    print(f'prompt={prompt}')
+    #print(f'prompt={prompt}')
     captions = [prompt]
     tokens = text_tokenizer(text=captions, max_length=512, padding='max_length', truncation=True, return_tensors='pt')  # todo: put this into dataset
     input_ids = tokens.input_ids.cuda(non_blocking=True)
@@ -143,7 +143,7 @@ def gen_one_img(
     end = time.time()
     COST.append(end - sstt)
     INFI_COST.append(end - stt)
-    get_torch_mem_usage()
+    #get_torch_mem_usage()
     img = img_list[0]
     return img
 

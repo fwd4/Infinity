@@ -354,7 +354,7 @@ class SelfAttention(nn.Module):
             # if self.cos_attn: q, k are in fp32; v is in bf16
             # else: q, k, v are in bf16
             if self.use_flex_attn and attn_fn is not None:
-                oup = attn_fn(q.to(v.dtype), k.to(v.dtype), v, scale=self.scale).transpose(1, 2).reshape(B, L, C)
+                oup = attn_fn(q, k, v, scale=self.scale).transpose(1, 2).reshape(B, L, C)
             else:
                 #oup = slow_attn(query=q, key=k, value=v, scale=self.scale, attn_mask=attn_bias_or_two_vector, dropout_p=0).transpose(1, 2).reshape(B, L, C)
                 oup = slow_attn(query=q, key=k, value=v, scale=self.scale, attn_mask=None, dropout_p=0).transpose(1, 2).reshape(B, L, C)

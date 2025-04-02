@@ -199,7 +199,6 @@ class FlexAttn(nn.Module):
             self.mask_mod = _generate_var_infer_mask_with_kv_cache(self.lengths)
             Q_LP = (Q_L + 127) // 128 * 128
             KV_LP = (KV_L + 127) // 128 * 128
-            print(f"{Q_L}/{Q_LP}, {KV_L}/{KV_LP}", self.offsets, self.lengths)
             mask = and_masks(infi_mask2(self.lengths, self.offsets, self.kv_sink_stage, self.kv_opt), self.mask_mod)
             #mask = self.mask_mod
             self.block_mask = create_block_mask(mask, B = 1, H = 1, Q_LEN = Q_L, KV_LEN = KV_L, device = 'cuda', _compile = True)
@@ -210,16 +209,12 @@ class FlexAttn(nn.Module):
 
     def forward(self, q, k, v, scale = None):
         if self.use_flash:
-            q_tp = q.transpose(1, 2)
-            k_tp = k.transpose(1, 2)
-            v_tp = v.transpose(1, 2)
-            oup = flash_attn_func(q_tp, k_tp, v_tp, dropout_p=0, softmax_scale=scale)
-            oup = oup.transpose(1, 2)
+            oup = slow_attn(query=q, key=k, value=v, scale=scale, attn_mask=None, dropout_p=0)
         elif self.auto_padding:
             q_pad_len = (128 - q.shape[-2] % 128) % 128
             kv_pad_len = (128 - k.shape[-2] % 128) % 128
-            q_pad = F.pad(q, (0, 0, 0, q_pad_len))
-            k_pad = F.pad(k, (0, 0, 0, kv_pad_len))
+            q_pad = F.pad(q.to(v.dtype), (0, 0, 0, q_pad_len))
+            k_pad = F.pad(k.to(v.dtype), (0, 0, 0, kv_pad_len))
             v_pad = F.pad(v, (0, 0, 0, kv_pad_len))
             oup = self.flex_attention(q_pad, k_pad, v_pad, block_mask = self.block_mask, scale = scale)
             if q_pad_len > 0:
