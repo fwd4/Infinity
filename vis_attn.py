@@ -71,6 +71,7 @@ def process_folder(input_folder, output_folder):
         except Exception as e:
             print(f"处理文件 {file_path.name} 时出错: {str(e)}")
 
+
 if __name__ == "__main__":
     # 设置输入输出路径
     input_folder = "infi_scores/stage11"
