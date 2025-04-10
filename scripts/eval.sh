@@ -2,6 +2,7 @@
 export HF_HOME=/root/huggingface
 export HF_ENDPOINT=https://hf-mirror.com
 
+export CUDA_VISIBLE_DEVICES=2
 infer_eval_image_reward() {
     # ${pip_ext} install image-reward pytorch_lightning
     # ${pip_ext} install -U timm diffusers
@@ -192,21 +193,21 @@ model_type=infinity_2b
 use_scale_schedule_embedding=0
 use_bit_label=1
 checkpoint_type='torch'
-infinity_model_path=weights/infinity_2b_reg.pth
+infinity_model_path=/home/model_data/infinity_2b_reg.pth
 out_dir_root=output/infinity_2b_evaluation
 vae_type=32
-vae_path=weights/infinity_vae_d32reg.pth
+vae_path=/home/model_data/infinity_vae_d32reg.pth
 cfg=4
 tau=1
 rope2d_normalized_by_hw=2
 add_lvl_embeding_only_first_block=1
 rope2d_each_sa_layer=1
-text_encoder_ckpt=weights/flan-t5-xl
+text_encoder_ckpt=/home/model_data/flan-t5-xl
 text_channels=2048
 apply_spatial_patchify=0
 cfg_insertion_layer=0
 sub_fix=cfg${cfg}_tau${tau}_cfg_insertion_layer${cfg_insertion_layer}
-use_flex_attn=1
+use_flex_attn=0
 prefix=1497
 
 
