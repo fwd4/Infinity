@@ -110,7 +110,7 @@ class Infinity(nn.Module):
         apply_spatial_patchify = 0,
         inference_mode=False,
         sink_stage=8,
-        kv_opt=True,
+        kv_opt=False,
     ):
         # set hyperparameters
         self.sink_stage = sink_stage
@@ -572,7 +572,12 @@ class Infinity(nn.Module):
         # get_torch_mem_usage()
         # tt1 = time.time() * 1e3
 
+        sketch_codes = None
+        refine_codes = []
+
         # backbone_time = []
+        summed_array = []
+        mask_minus_1, mask_minus_2, mask_minus_3 = None, None, None
         for si, pn in enumerate(scale_schedule):   # si: i-th segment
             t0 = time.time() * 1e3
 
@@ -656,7 +661,14 @@ class Infinity(nn.Module):
                 idx_Bld_list.append(idx_Bld)
                 codes = vae.quantizer.lfq.indices_to_codes(idx_Bld, label_type='bit_label') # [B, d, 1, h, w] or [B, d, 1, 2h, 2w]
                 if si != num_stages_minus_1:
-                    summed_codes += F.interpolate(codes, size=vae_scale_schedule[-1], mode=vae.quantizer.z_interplote_up)
+                    refine_code = F.interpolate(codes, size=vae_scale_schedule[-1], mode=vae.quantizer.z_interplote_up)
+                else:
+                    refine_code = codes
+                if si != num_stages_minus_1:
+                    if si < 10:
+                        summed_codes += refine_code
+                    else:
+                        refine_codes.append(refine_code)
                     last_stage = F.interpolate(summed_codes, size=vae_scale_schedule[si+1], mode=vae.quantizer.z_interplote_up) # [B, d, 1, h, w] or [B, d, 1, 2h, 2w]
                     last_stage = last_stage.squeeze(-3) # [B, d, h, w] or [B, d, 2h, 2w]
                     if self.apply_spatial_patchify: # patchify operation
@@ -664,7 +676,42 @@ class Infinity(nn.Module):
                     last_stage = last_stage.reshape(*last_stage.shape[:2], -1) # [B, d, h*w] or [B, 4d, h*w]
                     last_stage = torch.permute(last_stage, [0,2,1]) # [B, h*w, d] or [B, h*w, 4d]
                 else:
-                    summed_codes += codes
+                    indexed_summing = summed_codes.reshape(-1, 64*64)
+                    residual_codes = [codes.reshape(-1, 64*64),
+                                      refine_codes[-1].reshape(-1, 64*64),
+                                      refine_codes[-2].reshape(-1, 64*64)]
+                    for i in range(64*64):
+                        if i in mask_minus_1:
+                            indexed_summing[:, i] += residual_codes[0][:, i]
+                        elif i in mask_minus_2:
+                            indexed_summing[:, i] += residual_codes[1][:, i]
+                        elif i in mask_minus_3:
+                            indexed_summing[:, i] += residual_codes[2][:, i]
+                    summed_codes = indexed_summing.reshape(1, 32, 1, 64, 64)
+                
+                if si == 9:
+                    flatten_sum = summed_codes.reshape(-1, 64, 64)
+                    dc_component = F.avg_pool2d(flatten_sum, 64)
+                    #import pdb; pdb.set_trace()
+                    dc_diff = torch.norm(flatten_sum - dc_component, dim=0).flatten()
+                    total_sz = dc_diff.shape[0]
+                    _, top50 = torch.topk(dc_diff, total_sz * 50 // 100)
+                    _, top15 = torch.topk(dc_diff, total_sz * 15 // 100)
+                    _, top5 = torch.topk(dc_diff, total_sz * 5 // 100)
+                    mask_minus_1 = set(top5.cpu().numpy())
+                    mask_minus_2 = set(top15.cpu().numpy()) - mask_minus_1
+                    mask_minus_3 = set(top50.cpu().numpy()) - mask_minus_2
+
+
+                # elif si > 10:
+                #     last_stage = F.interpolate(sketch_codes, size=vae_scale_schedule[si+1], mode=vae.quantizer.z_interplote_up) # [B, d, 1, h, w] or [B, d, 1, 2h, 2w]
+                #     last_stage = last_stage.squeeze(-3) # [B, d, h, w] or [B, d, 2h, 2w]
+                #     if self.apply_spatial_patchify: # patchify operation
+                #         last_stage = torch.nn.functional.pixel_unshuffle(last_stage, 2) # [B, 4d, h, w]
+                #     last_stage = last_stage.reshape(*last_stage.shape[:2], -1) # [B, d, h*w] or [B, 4d, h*w]
+                #     last_stage = torch.permute(last_stage, [0,2,1]) # [B, h*w, d] or [B, h*w, 4d]
+
+                summed_array.append(np.mean(summed_codes.cpu().numpy(), axis=(0,1,2)))
             else:
                 if si < gt_leak:
                     idx_Bl = gt_ls_Bl[si]
@@ -685,6 +732,37 @@ class Infinity(nn.Module):
             # print(f"stage {si}, {pn}, {t1 - t0:.2f}ms, {t2 - t1:.2f}ms, {t3 - t2:.2f}ms")
             # get_torch_mem_usage()
         # tt2 = time.time() * 1e3
+
+        # import matplotlib.pyplot as plt
+        # grays = np.linspace(0.1, 0.8, 4)
+        # fig, axs = plt.subplots(1, 2, figsize=(12, 4))
+        # u_array, v_array = [], []
+        # u_max, v_max = None, None
+        # for i, sc in enumerate(summed_array):
+        #     fft_result = np.fft.fft2(sc, axes=(0, 1))
+        #     magnitude = np.abs(fft_result)
+        #     if i >= len(summed_array) - 4:
+        #         # u_mean = np.log1p((magnitude).mean(axis=0)) - np.log1p((mag_last).mean(axis=0))# 沿 v 方向平均（列向）
+        #         # v_mean = np.log1p((magnitude).mean(axis=1)) - np.log1p((mag_last).mean(axis=1))# 沿 u 方向平均（行向）
+        #         u_mean = np.log1p((magnitude).mean(axis=0))
+        #         v_mean = np.log1p((magnitude).mean(axis=1))
+        #         u_array.append(u_mean[:32])
+        #         v_array.append(v_mean[:32])
+        #         u_delta_base__ = np.max(u_mean)
+        #         v_delta_base__ = np.max(v_mean)
+        #         u_max = u_delta_base__ if u_max is None else max(u_delta_base__, u_max)
+        #         v_max = v_delta_base__ if v_max is None else max(v_delta_base__, v_max)
+
+        #         # if u_last is None or v_last is None:
+        #         #     axs[0].plot(u_mean,color=str(grays[i]))
+        #         #     axs[1].plot(v_mean,color=str(grays[i]))
+        #         # else:
+        
+        # for i in range(4):
+        #     axs[0].plot(u_array[i] - u_max,color=str(grays[i]))
+        #     axs[1].plot(v_array[i] - v_max,color=str(grays[i]))
+        # plt.tight_layout()
+        # plt.savefig(f'fft_amplitude.png', dpi=300, bbox_inches='tight')
 
         if inference_mode:
             for b in self.unregistered_blocks: (b.sa if isinstance(b, CrossAttnBlock) else b.attn).kv_caching(False)
@@ -707,6 +785,20 @@ class Infinity(nn.Module):
         img = img.permute(0, 2, 3, 1).mul_(255).to(torch.uint8).flip(dims=(3,))
         # print(f"pre: {tt1 - tt0:.2f}ms, backbone: {tt2-tt1:.2f}ms, post{tt3 - tt2:.2f}ms")
         #ATTN_TIME.append(backbone_time)
+        # masked_image = img[0].clone()
+        # unmasked_image = img[0].clone()
+        # mask_patch = torch.zeros((1, 1, 3), device='cuda')
+        # for i in range(64*64):
+        #     r, c = i // 64, i % 64
+        #     y_start, y_end = r * 16, r * 16 + 16
+        #     x_start, x_end = c * 16, c * 16 + 16
+        #     if i in top50:
+        #         masked_image[y_start:y_end, x_start:x_end] = mask_patch # high freq
+        #     else:
+        #         unmasked_image[y_start:y_end, x_start:x_end] = mask_patch # low freq
+        # import cv2
+        # cv2.imwrite("lo_freq.jpg", masked_image.cpu().numpy())
+        # cv2.imwrite("hi_freq.jpg", unmasked_image.cpu().numpy())
         return ret, idx_Bl_list, img
     
     @for_visualize

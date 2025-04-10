@@ -123,6 +123,22 @@ for candidate in candidates:
                 break
 
 
+def load_meta_prompts(meta_file_path):
+    """Load prompts from meta JSON file"""
+    with open(meta_file_path, 'r') as f:
+        meta_data = json.load(f)
+    
+    lines = []
+    for image_id, data in meta_data.items():
+        lines.append({
+            'prompt': data['prompt'],
+            'h_div_w': 1.0,
+            'infer_type': 'infer/mhhq30k_prompt',
+            'category': data['category'],
+            'image_id': image_id
+        })
+    return lines
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     add_common_arguments(parser)
@@ -153,26 +169,27 @@ if __name__ == '__main__':
         lines4infer = [{'prompt': prompt, 'h_div_w': 1.0, 'infer_type': 'infer/coco30k_prompt'} for prompt in captions]
     
     if args.jsonl_filepath:
-        lines4infer = []
-        with open(args.jsonl_filepath, 'r') as f:
-            cnt = 0
-            for line in f:
-                meta = json.loads(line)
-                gt_image_path = meta['image_path']
-                assert osp.exists(gt_image_path), gt_image_path
-                if args.long_caption_fid:
-                    prompt = meta['long_caption']
-                else:
-                    prompt = meta['text']
-                if not prompt:
-                    continue
-                lines4infer.append({
-                    'prompt': prompt,
-                    'h_div_w': meta['h_div_w'],
-                    'infer_type': 'val/laion_coco_long_caption',
-                    'gt_image_path': gt_image_path,
-                    'meta_line': line,
-                })
+        lines4infer = load_meta_prompts(args.jsonl_filepath)
+        # lines4infer = []
+        #with open(args.jsonl_filepath, 'r') as f:
+        #    cnt = 0
+        #    for line in f:
+        #        meta = json.loads(line)
+        #        gt_image_path = meta['image_path']
+        #        assert osp.exists(gt_image_path), gt_image_path
+        #        if args.long_caption_fid:
+        #            prompt = meta['long_caption']
+        #        else:
+        #            prompt = meta['text']
+        #        if not prompt:
+        #            continue
+        #        lines4infer.append({
+        #            'prompt': prompt,
+        #            'h_div_w': meta['h_div_w'],
+        #            'infer_type': 'val/laion_coco_long_caption',
+        #            'gt_image_path': gt_image_path,
+        #            'meta_line': line,
+        #        })
 
     if args.fid_max_examples > 0:
         lines4infer = lines4infer[:args.fid_max_examples]
@@ -202,6 +219,7 @@ if __name__ == '__main__':
     cnt = 0
     for i, infer_data in enumerate(lines4infer):
         try:
+            # import pdb; pdb.set_trace()
             prompt = infer_data['prompt']
             prompt = process_short_text(prompt)
             prompt_id = get_prompt_id(prompt)
@@ -220,15 +238,18 @@ if __name__ == '__main__':
 
             img_list = []
             gt_ls_Bl = []
-            if ('gt_image_path' in infer_data):
-                gt_img, recons_img, all_bit_indices = joint_vi_vae_encode_decode(vae, infer_data['gt_image_path'], vae_scale_schedule, device, tgt_h, tgt_w)
+            gt_image_path = osp.join(osp.dirname(args.jsonl_filepath), infer_data['category'], f"{infer_data['image_id']}.jpg")
+            #if ('gt_image_path' in infer_data):
+            if osp.exists(gt_image_path):
+                #gt_img, recons_img, all_bit_indices = joint_vi_vae_encode_decode(vae, infer_data['gt_image_path'], vae_scale_schedule, device, tgt_h, tgt_w)
+                gt_img, recons_img, all_bit_indices = joint_vi_vae_encode_decode(vae, gt_image_path, vae_scale_schedule, device, tgt_h, tgt_w)
                 gt_ls_Bl = all_bit_indices
             else:
                 if args.save4fid_eval:
                     continue
             
             if args.coco30k_prompts or args.save4fid_eval:
-                concate_img = gen_one_img(infinity, vae, text_tokenizer, text_encoder, prompt, g_seed=0, gt_leak=0, gt_ls_Bl=gt_ls_Bl, t5_path=None, tau_list=args.tau, cfg_sc=3, cfg_list=args.cfg, scale_schedule=scale_schedule, cfg_insertion_layer=[args.cfg_insertion_layer], vae_type=args.vae_type, sampling_per_bits=args.sampling_per_bits)
+                concate_img = gen_one_img(infinity, vae, text_tokenizer, text_encoder, prompt, g_seed=0, gt_leak=0, gt_ls_Bl=gt_ls_Bl, tau_list=args.tau, cfg_sc=3, cfg_list=args.cfg, scale_schedule=scale_schedule, cfg_insertion_layer=[args.cfg_insertion_layer], vae_type=args.vae_type, sampling_per_bits=args.sampling_per_bits)
             else:
                 g_seed = 0 if args.n_samples == 1 else None
                 tmp_img_list = []

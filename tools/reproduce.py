@@ -35,7 +35,7 @@ args = argparse.Namespace(
     text_channels=2048,
     apply_spatial_patchify=0,
     h_div_w_template=1.000,
-    use_flex_attn=1,
+    use_flex_attn=0,
     cache_dir='/dev/shm',
     #checkpoint_type='torch_shard',
     checkpoint_type='torch',
@@ -80,7 +80,7 @@ repeat = 10
 
 img_cnt = 0
 # Set total number of iterations
-total_iterations = 150
+total_iterations = 30
 
 timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
 run_dir = osp.join(output_dir, f"run_{timestamp}")
