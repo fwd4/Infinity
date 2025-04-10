@@ -34,7 +34,7 @@ def calculate_hamming_distance(arr1, arr2):
     """
     return np.sum(arr1 != arr2) / arr1.size
 
-# 处理每个阶段中每张图像的像素级相似性
+# 处理每个阶段中每张图像与最后一张图像的像素级相似性
 def process_sample_similarity_with_last(data, pdf_filename):
     sample_codes_data = data['sample_codes_data']
     stages = sorted(sample_codes_data.keys())  # 获取所有阶段的 key
@@ -253,6 +253,71 @@ def process_prob_similarity_with_adjacent(data, pdf_filename):
                         plt.suptitle(f"Stage {stage} - Pixel-level similarity between adjacent steps", fontsize=16)
 
 
+# 处理多个文件并绘制相同 stage 的 img_similarity 折线图
+def process_multiple_files(file_paths, pdf_filename):
+    all_data = {}  # 用于存储每个文件的 img_similarity 数据
+
+    # 遍历每个文件
+    for file_path in file_paths:
+        data = read_pkl_file(file_path)
+        pro_codes_data = data['pro_codes_data']
+        stages = sorted(pro_codes_data.keys())  # 获取所有阶段的 key
+
+        file_similarities = {}  # 存储当前文件的相似性数据
+        for stage in stages:
+            stage_data = pro_codes_data[stage]
+            last_image = stage_data[-1].reshape(-1, 2).cpu().numpy()  # 最后一张图像的像素概率分布
+
+            similarities = []
+            for step in range(len(stage_data)):  # 遍历每一步
+                current_image = stage_data[step].reshape(-1, 2).cpu().numpy()  # 当前图像的像素概率分布
+
+                # 确保像素数量一致
+                assert current_image.shape[0] == last_image.shape[0], "像素数量不一致"
+
+                # 计算每个像素的 KL 散度
+                pixel_similarities = [
+                    calculate_kl_divergence(current_image[j], last_image[j])
+                    for j in range(current_image.shape[0])
+                ]
+                img_similarity = np.mean(pixel_similarities)  # 计算平均相似性
+                similarities.append(img_similarity)
+
+            file_similarities[stage] = similarities
+        all_data[file_path] = file_similarities
+
+    # 绘制每个 stage 的折线图
+    with PdfPages(pdf_filename) as pdf:
+        stages = sorted(all_data[next(iter(all_data))].keys())  # 获取所有 stage
+        for stage in stages:
+            plt.figure(figsize=(10, 6))
+            plt.title(f"Stage {stage} - img_similarity Across Files", fontsize=16)
+            plt.xlabel("Step")
+            plt.ylabel("Average KL Divergence")
+            plt.grid(True)
+
+            # 定义颜色和标记样式的列表
+            colors = plt.cm.tab20.colors  # 使用 matplotlib 提供的颜色映射
+            markers = ['o', 's', 'D', '^', 'v', '<', '>', 'p', '*', 'h', 'H', 'X', 'd']  # 多种标记样式
+
+            # 遍历每个文件的数据
+            for idx, (file_path, file_similarities) in enumerate(all_data.items()):
+                if stage in file_similarities:
+                    color = colors[idx % len(colors)]  # 循环使用颜色
+                    marker = markers[idx % len(markers)]  # 循环使用标记样式
+                    plt.plot(
+                        range(1, len(file_similarities[stage]) + 1),
+                        file_similarities[stage],
+                        marker=marker,
+                        color=color,
+                        label=file_path.split('/')[-1]  # 使用文件名作为图例
+                    )
+
+            plt.legend()
+            pdf.savefig()
+            plt.close()
+
+
 
 # 主程序
 if __name__ == "__main__":
@@ -269,7 +334,18 @@ if __name__ == "__main__":
     pdf_filename_prob_adjacent = '/home/lianyaoxiu/lianyaoxiu/Infinity/outputs/plots/pixel_prob_sim_adjacent_plots_output.pdf'  # 替换为实际输出路径
     pdf_filename_sample_adjacent = '/home/lianyaoxiu/lianyaoxiu/Infinity/outputs/plots/pixel_sample_sim_adjacent_plots_output.pdf'  # 替换为实际输出路径
 
-    process_prob_similarity_with_last(data,pdf_filename_prob)
+    # process_prob_similarity_with_last(data,pdf_filename_prob)
     # process_sample_similarity_with_last(data,pdf_filename_sample)
-    process_prob_similarity_with_adjacent(data,pdf_filename_prob_adjacent)
+    # process_prob_similarity_with_adjacent(data,pdf_filename_prob_adjacent)
     # process_sample_similarity_with_adjacent(data,pdf_filename_sample_adjacent)
+
+    import glob
+
+    file_paths = glob.glob('/home/lianyaoxiu/lianyaoxiu/Infinity/outputs/codes/test_pixel_partialblock_prob_*.pkl')
+    # 输出 PDF 文件路径
+    pdf_filename = '/home/lianyaoxiu/lianyaoxiu/Infinity/outputs/plots/multiple_files_pixel_prob_sim_plots_output.pdf'
+
+    # 处理多个文件并保存结果到 PDF
+    process_multiple_files(file_paths, pdf_filename)
+
+    print(f"相似性结果已保存到 {pdf_filename}")
