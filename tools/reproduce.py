@@ -140,27 +140,27 @@ prompts = {
     "3d_school": "A vibrant and creative 3D render designed for the bottom of a mobile application's homepage, featuring a charming miniature school surrounded by tiny children carrying colorful backpacks, set in a playful and imaginative environment.",
     "explore_more": "A stunning and adventurous image featuring the text 'Explore More' in a bold, adventurous font, placed over a scenic hiking trail with lush greenery, towering mountains, and a clear blue sky, evoking a sense of wanderlust.",
     "toy_car": "A close-up, cinematic shot of a diecast toy car in a meticulously crafted diorama setting. The scene is set at night, with warm lights glowing from tiny windows, bokeh effects in the background, and a gentle dusting of snow adding a cozy, wintery ambiance.",
-    "fairy_house": "A photorealistic, ultra-detailed image of a fairy-like house with white walls and pink-tinted windows, surrounded by a lush garden filled with vibrant flowers. The scene should be scenic, cute, and magical, with intricate textures and a soft, dreamy atmosphere.",
-    "cat_fashion": "A hyperrealistic black and white photograph capturing a high-fashion cat runway show, styled in the dramatic, high-contrast fashion of Helmut Newton. The cats should be striking, elegant, and exuding sophistication.",
-    "spacefrog_astroduck": "A photorealistic scene featuring two superheroes, Spacefrog (a dashing green cartoon-like frog with a red cape) and Astroduck (a yellow fuzzy duck, part-robot, with blue/grey armor), standing near a garden pond next to their classic flying saucer, the Tadpole 3000. The scene should be dynamic and vivid.",
-    "miniature_village": "A whimsical and enchanted miniature village bustling with activity, featuring tiny houses, bustling markets, and tiny residents going about their daily lives. The scene should be rich in detail, with a magical and fairy-tale-like atmosphere.",
-    "corgi_dog": "A close-up, high-resolution photograph of a joyful Corgi dog wearing a black hat and round, dark sunglasses. The dog should have a happy expression, with its mouth open and tongue sticking out, exuding excitement and cheerfulness.",
-    "robot_eggplant": "A photorealistic image of a futuristic robot holding a massive eggplant, set against a sunny, natural background with lush greenery and a clear blue sky. The scene should blend technology and nature harmoniously.",
-    # "perfume_product": "A minimalist and highly detailed product photography setup featuring a sleek perfume bottle placed on a white marble table, accompanied by pineapple, coconut, and lime as decorative elements. The scene should be bright, concise, and layered with intricate details, evoking a fresh and luxurious ambiance.",
+    # "fairy_house": "A photorealistic, ultra-detailed image of a fairy-like house with white walls and pink-tinted windows, surrounded by a lush garden filled with vibrant flowers. The scene should be scenic, cute, and magical, with intricate textures and a soft, dreamy atmosphere.",
+    # "cat_fashion": "A hyperrealistic black and white photograph capturing a high-fashion cat runway show, styled in the dramatic, high-contrast fashion of Helmut Newton. The cats should be striking, elegant, and exuding sophistication.",
+    # "spacefrog_astroduck": "A photorealistic scene featuring two superheroes, Spacefrog (a dashing green cartoon-like frog with a red cape) and Astroduck (a yellow fuzzy duck, part-robot, with blue/grey armor), standing near a garden pond next to their classic flying saucer, the Tadpole 3000. The scene should be dynamic and vivid.",
+    # "miniature_village": "A whimsical and enchanted miniature village bustling with activity, featuring tiny houses, bustling markets, and tiny residents going about their daily lives. The scene should be rich in detail, with a magical and fairy-tale-like atmosphere.",
+    # "corgi_dog": "A close-up, high-resolution photograph of a joyful Corgi dog wearing a black hat and round, dark sunglasses. The dog should have a happy expression, with its mouth open and tongue sticking out, exuding excitement and cheerfulness.",
+    # "robot_eggplant": "A photorealistic image of a futuristic robot holding a massive eggplant, set against a sunny, natural background with lush greenery and a clear blue sky. The scene should blend technology and nature harmoniously.",
+    # # "perfume_product": "A minimalist and highly detailed product photography setup featuring a sleek perfume bottle placed on a white marble table, accompanied by pineapple, coconut, and lime as decorative elements. The scene should be bright, concise, and layered with intricate details, evoking a fresh and luxurious ambiance.",
     # "mountain_landscape": "A breathtaking and picturesque mountainous landscape under a cloudy sky. The mountains are lush and green, dotted with trees and shrubs, while the valley below features a small rural settlement with scattered buildings. The scene should be captured from a high vantage point, offering a sweeping, serene view of the natural beauty."
-    "red_apple_simple": "A single red apple on a wooden table.",  
+    # "red_apple_simple": "A single red apple on a wooden table.",  
     # "blue_flower_simple": "A close-up of a blue flower.",  
-    "yellow_banana_simple": "A ripe yellow banana on a white surface.",  
-    "green_grape_simple": "A bunch of green grapes on a wooden table.",  
-    "white_cup_simple": "A white coffee cup filled with coffee.",  
-    "strawberry_simple": "A fresh red strawberry on a light background.",  
-    "orange_simple": "A whole orange on a wooden table.",  
-    "single_pear_simple": "A green pear on a light surface.",  
-    "lime_simple": "A sliced lime on a cutting board.",  
-    "blueberry_simple": "Fresh blueberries on a white background."  
+    # "yellow_banana_simple": "A ripe yellow banana on a white surface.",  
+    # "green_grape_simple": "A bunch of green grapes on a wooden table.",  
+    # "white_cup_simple": "A white coffee cup filled with coffee.",  
+    # "strawberry_simple": "A fresh red strawberry on a light background.",  
+    # "orange_simple": "A whole orange on a wooden table.",  
+    # "single_pear_simple": "A green pear on a light surface.",  
+    # "lime_simple": "A sliced lime on a cutting board.",  
+    # "blueberry_simple": "Fresh blueberries on a white background."  
 }
 # OUTPUT
-output_dir = "./outputs/pics1"
+output_dir = "./outputs/pics3"
 os.makedirs(output_dir, exist_ok=True)
 
 img_cnt = 0
@@ -209,7 +209,6 @@ for category, prompt in prompts.items():
     # print(f"All images for category '{category}' saved to {pdf_path}")
 
 
-
     # GEN
     generated_image = gen_one_img(
         infinity,
@@ -236,7 +235,7 @@ for category, prompt in prompts.items():
     #     exit(0)
 
     # SAVE
-    save_pic = False
+    save_pic = True
     if save_pic:
         save_path = osp.join(output_dir, f"{category}_orign.jpg")
         cv2.imwrite(save_path, generated_image.cpu().numpy())

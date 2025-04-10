@@ -1,6 +1,7 @@
 #!/bin/bash
 pip config set global.index-url https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple
 
+export CUDA_VISIBLE_DEVICES=2 
 infer_eval_image_reward() {
     # ${pip_ext} install image-reward pytorch_lightning
     # ${pip_ext} install -U timm diffusers

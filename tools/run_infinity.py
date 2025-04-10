@@ -441,7 +441,7 @@ if __name__ == '__main__':
                 gt_ls_Bl=None,
                 cfg_list=args.cfg,
                 tau_list=args.tau,
-                scale_schedule=scale_schedule,
+                scale_schedule=scale_schedule[:-2],
                 cfg_insertion_layer=[args.cfg_insertion_layer],
                 vae_type=args.vae_type,
                 sampling_per_bits=args.sampling_per_bits,
