@@ -153,7 +153,7 @@ if __name__ == "__main__":
     #         plt.close(fig)
 
     #     print(f"Processing for file {file_path} completed!")
-    file_paths = glob.glob('/home/lianyaoxiu/lianyaoxiu/Infinity/outputs/codes/test_para5_10*.pkl')
+    file_paths = glob.glob('/home/lianyaoxiu/lianyaoxiu/Infinity/outputs/codes/test_para10*.pkl')
 
     # 处理每个文件
     for file_path in file_paths:
@@ -166,7 +166,7 @@ if __name__ == "__main__":
         save_tensors_to_pdf(test_partial_list, pdf_path_partial, vae, "Test Partial List Images")
 
         # 保存 summed_codes_8 的图片
-        summed_codes_8 = data['summed_codes_5']
+        summed_codes_8 = data['summed_codes_10']
         summed_codes_8_image = tensor_to_image(summed_codes_8, vae)
         pdf_path_summed = f'/home/lianyaoxiu/lianyaoxiu/Infinity/outputs/plots25/{osp.basename(file_path).replace(".pkl", "_summed_codes_8_images.pdf")}'
         with PdfPages(pdf_path_summed) as pdf:
@@ -178,7 +178,7 @@ if __name__ == "__main__":
             plt.close(fig)
 
         # 计算所有值的总和并保存为图片
-        total_sum_tensor = sum(test_partial_list) + data['summed_codes_5']
+        total_sum_tensor = sum(test_partial_list) + data['summed_codes_10']
         total_sum_image = tensor_to_image(total_sum_tensor, vae)
         pdf_path_total = f'/home/lianyaoxiu/lianyaoxiu/Infinity/outputs/plots25/{osp.basename(file_path).replace(".pkl", "_total_sum_image.pdf")}'
         with PdfPages(pdf_path_total) as pdf:
