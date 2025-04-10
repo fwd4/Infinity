@@ -235,7 +235,7 @@ for category, prompt in prompts.items():
     #     exit(0)
 
     # SAVE
-    save_pic = True
+    save_pic = False
     if save_pic:
         save_path = osp.join(output_dir, f"{category}_orign.jpg")
         cv2.imwrite(save_path, generated_image.cpu().numpy())
