@@ -709,9 +709,11 @@ class Infinity(nn.Module):
         summed_codes_data = {si: [] for si in range(len(scale_schedule))}
         partial_codes_data = {si: [] for si in range(len(scale_schedule))}
         test_partial_list = []
+        test_partial_list0 = []                  
+
 
         for si, pn in enumerate(scale_schedule):   # si: i-th segment
-            if si <= 5:
+            if si <= 9:
                 if profile:
                     t0 = time.time() * 1e3
 
@@ -803,8 +805,8 @@ class Infinity(nn.Module):
                 
                 if si != num_stages_minus_1:
                     summed_codes += F.interpolate(codes, size=vae_scale_schedule[-1], mode=vae.quantizer.z_interplote_up)
-                    if si == 5:
-                        summed_codes_5 = summed_codes.clone()  # Save summed_codes for stage 8
+                    if si == 9:
+                        summed_codes_10 = summed_codes.clone()  # Save summed_codes for stage 8
                         continue
 
                     last_stage = F.interpolate(summed_codes, size=vae_scale_schedule[si+1], mode=vae.quantizer.z_interplote_up) # [B, d, 1, h, w] or [B, d, 1, 2h, 2w]
@@ -832,101 +834,8 @@ class Infinity(nn.Module):
                     t3 = time.time() * 1e3
                     print(f"stage {si}, {pn}, all {t3 - t0:.2f}ms, {t1 - t0:.2f}ms, 32block {t2 - t1:.2f}ms, {t3 - t2:.2f}ms")
 
-            if si >5 and si<10:
-                last_stage = F.interpolate(summed_codes_5, size=vae_scale_schedule[si], mode=vae.quantizer.z_interplote_up) # [B, d, 1, h, w] or [B, d, 1, 2h, 2w]
-                ######################### 2.1 #############################
-                last_stage = last_stage.squeeze(-3) # [B, d, h, w] or [B, d, 2h, 2w]
-                if self.apply_spatial_patchify: # patchify operation
-                    last_stage = torch.nn.functional.pixel_unshuffle(last_stage, 2) # [B, 4d, h, w]
-                last_stage = last_stage.reshape(*last_stage.shape[:2], -1) # [B, d, h*w] or [B, 4d, h*w]
-                last_stage = torch.permute(last_stage, [0,2,1]) # [B, h*w, d] or [B, h*w, 4d]
-
-                ######################### 2.1 #############################
-
-                ######################### 2.2 #############################            
-                codes_data[si].append(codes.cpu().numpy())
-                summed_codes_data[si].append(summed_codes.cpu().numpy())
-                last_stage = self.word_embed(self.norm0_ve(last_stage))
-                last_stage = last_stage.repeat(bs//B, 1, 1)
-                ######################### 2.2 #############################
-                layer_idx = 0
-                for block_idx, b in enumerate(self.block_chunks):
-                    if self.add_lvl_embeding_only_first_block and block_idx == 0:
-                        last_stage = self.add_lvl_embeding(last_stage, si, scale_schedule, need_to_pad=need_to_pad)
-                        partial_codes_data[si].append(last_stage)
-                    if not self.add_lvl_embeding_only_first_block: 
-                        last_stage = self.add_lvl_embeding(last_stage, si, scale_schedule, need_to_pad=need_to_pad)
-                        partial_codes_data[si].append(last_stage)
-
-                    for ii, m in enumerate(b.module):
-                        block_number = block_idx * 4 + ii
-                        current_stage = last_stage.clone()
-                        last_stage = m(x=last_stage, cond_BD=cond_BD_or_gss, ca_kv=ca_kv, attn_bias_or_two_vector=None, attn_fn=attn_fn, scale_schedule=scale_schedule, rope2d_freqs_grid=self.rope2d_freqs_grid, scale_ind=si)
-                        partial_codes_data[si].append(last_stage)
-
-                        if compute_loss:
-                            if loss_func == 'MSE':                    
-                                mse = F.mse_loss(current_stage, last_stage)
-                                loss = mse.item()
-                            elif loss_func == 'relative_diff':
-                                diff = (last_stage - current_stage).abs().reshape(-1,last_stage.shape[-1])  
-                                sim = diff.sum()/last_stage.abs().sum()
-                                loss = sim
-                            elif loss_func == 'cosine_similarity':
-                                similarity = cosine_similarity(current_stage[0], last_stage[0])
-                                loss = similarity   
-                            elif loss_func == 'diff_ratio':
-                                diff = (last_stage - current_stage).abs().reshape(-1,last_stage.shape[-1])  
-                                loss = compute_diff_ratio(last_stage.abs().reshape(-1,last_stage.shape[-1]), diff)     
-
-                            loss_data[si].append(loss)
-
-                        if (cfg != 1) and (layer_idx in abs_cfg_insertion_layers):
-                            last_stage = cfg * last_stage[:B] + (1-cfg) * last_stage[B:]
-                            last_stage = torch.cat((last_stage, last_stage), 0)
-                            layer_idx += 1                
-
-                ######################### 1 #############################
-                if (cfg != 1) and add_cfg_on_logits:
-                    logits_BlV = self.get_logits(last_stage, cond_BD).mul(1/tau_list[si])
-                    logits_BlV = cfg * logits_BlV[:B] + (1-cfg) * logits_BlV[B:]
-                else:
-                    logits_BlV = self.get_logits(last_stage[:B], cond_BD[:B]).mul(1/tau_list[si])
-                
-                if self.use_bit_label:
-                    tmp_bs, tmp_seq_len = logits_BlV.shape[:2]
-                    logits_BlV = logits_BlV.reshape(tmp_bs, -1, 2)
-                    idx_Bld = sample_with_top_k_top_p_also_inplace_modifying_logits_(logits_BlV, rng=rng, top_k=top_k or self.top_k, top_p=top_p or self.top_p, num_samples=1)[:, :, 0]
-                    idx_Bld = idx_Bld.reshape(tmp_bs, tmp_seq_len, -1)
-                else:
-                    idx_Bl = sample_with_top_k_top_p_also_inplace_modifying_logits_(logits_BlV, rng=rng, top_k=top_k or self.top_k, top_p=top_p or self.top_p, num_samples=1)[:, :, 0]
-                if vae_type != 0:
-                    assert returns_vemb
-                    if si < gt_leak:
-                        idx_Bld = gt_ls_Bl[si]
-                    else:
-                        assert pn[0] == 1
-                        idx_Bld = idx_Bld.reshape(B, pn[1], pn[2], -1)
-                        if self.apply_spatial_patchify:
-                            idx_Bld = idx_Bld.permute(0,3,1,2)
-                            idx_Bld = torch.nn.functional.pixel_shuffle(idx_Bld, 2)
-                            idx_Bld = idx_Bld.permute(0,2,3,1)
-                        idx_Bld = idx_Bld.unsqueeze(1)
-
-                    idx_Bld_list.append(idx_Bld)
-                    codes = vae.quantizer.lfq.indices_to_codes(idx_Bld, label_type='bit_label') 
-                ######################### 1 #############################
-
-                if si != num_stages_minus_1:
-                    test_partial_code = F.interpolate(codes, size=vae_scale_schedule[-1], mode=vae.quantizer.z_interplote_up)
-                    # test_partial_list.append(test_partial_code)                    
-                    summed_codes_5 += test_partial_code
-                else:
-                    summed_codes_5 += codes
-                    # test_partial_list.append(codes)
-            
             if si >= 10:
-                last_stage = F.interpolate(summed_codes_5, size=vae_scale_schedule[si], mode=vae.quantizer.z_interplote_up) # [B, d, 1, h, w] or [B, d, 1, 2h, 2w]
+                last_stage = F.interpolate(summed_codes_10, size=vae_scale_schedule[si], mode=vae.quantizer.z_interplote_up) # [B, d, 1, h, w] or [B, d, 1, 2h, 2w]
                 ######################### 2.1 #############################
                 last_stage = last_stage.squeeze(-3) # [B, d, h, w] or [B, d, 2h, 2w]
                 if self.apply_spatial_patchify: # patchify operation
@@ -1013,17 +922,112 @@ class Infinity(nn.Module):
                 if si != num_stages_minus_1:
                     test_partial_code = F.interpolate(codes, size=vae_scale_schedule[-1], mode=vae.quantizer.z_interplote_up)
                     test_partial_list.append(test_partial_code)                    
-                    # summed_codes_ += test_partial_code
+                    # summed_codes_5 += test_partial_code
                 else:
-                    # summed_codes_ += codes
+                    # summed_codes_5 += codes
                     test_partial_list.append(codes)
+            '''
+            if si == 10:           
+                summed_codes_10  = summed_codes_5 + sum(test_partial_list0)
+            if si >= 10:
+                last_stage = F.interpolate(summed_codes_10, size=vae_scale_schedule[si], mode=vae.quantizer.z_interplote_up) # [B, d, 1, h, w] or [B, d, 1, 2h, 2w]
+                ######################### 2.1 #############################
+                last_stage = last_stage.squeeze(-3) # [B, d, h, w] or [B, d, 2h, 2w]
+                if self.apply_spatial_patchify: # patchify operation
+                    last_stage = torch.nn.functional.pixel_unshuffle(last_stage, 2) # [B, 4d, h, w]
+                last_stage = last_stage.reshape(*last_stage.shape[:2], -1) # [B, d, h*w] or [B, 4d, h*w]
+                last_stage = torch.permute(last_stage, [0,2,1]) # [B, h*w, d] or [B, h*w, 4d]
 
+                ######################### 2.1 #############################
+
+                ######################### 2.2 #############################            
+                codes_data[si].append(codes.cpu().numpy())
+                summed_codes_data[si].append(summed_codes.cpu().numpy())
+                last_stage = self.word_embed(self.norm0_ve(last_stage))
+                last_stage = last_stage.repeat(bs//B, 1, 1)
+                ######################### 2.2 #############################
+                layer_idx = 0
+                for block_idx, b in enumerate(self.block_chunks):
+                    if self.add_lvl_embeding_only_first_block and block_idx == 0:
+                        last_stage = self.add_lvl_embeding(last_stage, si, scale_schedule, need_to_pad=need_to_pad)
+                        partial_codes_data[si].append(last_stage)
+                    if not self.add_lvl_embeding_only_first_block: 
+                        last_stage = self.add_lvl_embeding(last_stage, si, scale_schedule, need_to_pad=need_to_pad)
+                        partial_codes_data[si].append(last_stage)
+
+                    for ii, m in enumerate(b.module):
+                        block_number = block_idx * 4 + ii
+                        current_stage = last_stage.clone()
+                        last_stage = m(x=last_stage, cond_BD=cond_BD_or_gss, ca_kv=ca_kv, attn_bias_or_two_vector=None, attn_fn=attn_fn, scale_schedule=scale_schedule, rope2d_freqs_grid=self.rope2d_freqs_grid, scale_ind=si)
+                        partial_codes_data[si].append(last_stage)
+
+                        if compute_loss:
+                            if loss_func == 'MSE':                    
+                                mse = F.mse_loss(current_stage, last_stage)
+                                loss = mse.item()
+                            elif loss_func == 'relative_diff':
+                                diff = (last_stage - current_stage).abs().reshape(-1,last_stage.shape[-1])  
+                                sim = diff.sum()/last_stage.abs().sum()
+                                loss = sim
+                            elif loss_func == 'cosine_similarity':
+                                similarity = cosine_similarity(current_stage[0], last_stage[0])
+                                loss = similarity   
+                            elif loss_func == 'diff_ratio':
+                                diff = (last_stage - current_stage).abs().reshape(-1,last_stage.shape[-1])  
+                                loss = compute_diff_ratio(last_stage.abs().reshape(-1,last_stage.shape[-1]), diff)     
+
+                            loss_data[si].append(loss)
+
+                        if (cfg != 1) and (layer_idx in abs_cfg_insertion_layers):
+                            last_stage = cfg * last_stage[:B] + (1-cfg) * last_stage[B:]
+                            last_stage = torch.cat((last_stage, last_stage), 0)
+                            layer_idx += 1                
+
+                ######################### 1 #############################
+                if (cfg != 1) and add_cfg_on_logits:
+                    logits_BlV = self.get_logits(last_stage, cond_BD).mul(1/tau_list[si])
+                    logits_BlV = cfg * logits_BlV[:B] + (1-cfg) * logits_BlV[B:]
+                else:
+                    logits_BlV = self.get_logits(last_stage[:B], cond_BD[:B]).mul(1/tau_list[si])
+                
+                if self.use_bit_label:
+                    tmp_bs, tmp_seq_len = logits_BlV.shape[:2]
+                    logits_BlV = logits_BlV.reshape(tmp_bs, -1, 2)
+                    idx_Bld = sample_with_top_k_top_p_also_inplace_modifying_logits_(logits_BlV, rng=rng, top_k=top_k or self.top_k, top_p=top_p or self.top_p, num_samples=1)[:, :, 0]
+                    idx_Bld = idx_Bld.reshape(tmp_bs, tmp_seq_len, -1)
+                else:
+                    idx_Bl = sample_with_top_k_top_p_also_inplace_modifying_logits_(logits_BlV, rng=rng, top_k=top_k or self.top_k, top_p=top_p or self.top_p, num_samples=1)[:, :, 0]
+                if vae_type != 0:
+                    assert returns_vemb
+                    if si < gt_leak:
+                        idx_Bld = gt_ls_Bl[si]
+                    else:
+                        assert pn[0] == 1
+                        idx_Bld = idx_Bld.reshape(B, pn[1], pn[2], -1)
+                        if self.apply_spatial_patchify:
+                            idx_Bld = idx_Bld.permute(0,3,1,2)
+                            idx_Bld = torch.nn.functional.pixel_shuffle(idx_Bld, 2)
+                            idx_Bld = idx_Bld.permute(0,2,3,1)
+                        idx_Bld = idx_Bld.unsqueeze(1)
+
+                    idx_Bld_list.append(idx_Bld)
+                    codes = vae.quantizer.lfq.indices_to_codes(idx_Bld, label_type='bit_label') 
+                ######################### 1 #############################
+
+                if si != num_stages_minus_1:
+                    test_partial_code = F.interpolate(codes, size=vae_scale_schedule[-1], mode=vae.quantizer.z_interplote_up)
+                    test_partial_list.append(test_partial_code)                    
+                    summed_codes_10 += test_partial_code
+                else:
+                    summed_codes_10 += codes
+                    test_partial_list.append(codes)
+            '''
         # Save the data to pkl files
         combined_data = {
             'test_partial_list': test_partial_list,
-            'summed_codes_5': summed_codes_5
+            'summed_codes_10': summed_codes_10
         }
-        with open(f'outputs/codes/test_para5_10_combined_data_{category}.pkl', 'wb') as f:
+        with open(f'outputs/codes/test_para10_combined_data_{category}.pkl', 'wb') as f:
             pickle.dump(combined_data, f)
 
 

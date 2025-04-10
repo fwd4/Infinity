@@ -47,4 +47,6 @@ wandb
 .DS_Store
 
 infi_scores/
+outputs/loss/
+outputs/codes/
 outputs/
