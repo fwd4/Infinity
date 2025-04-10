@@ -153,7 +153,7 @@ if __name__ == "__main__":
     #         plt.close(fig)
 
     #     print(f"Processing for file {file_path} completed!")
-    file_paths = glob.glob('/home/lianyaoxiu/lianyaoxiu/Infinity/outputs/codes/test_para5*.pkl')
+    file_paths = glob.glob('/home/lianyaoxiu/lianyaoxiu/Infinity/outputs/codes/test_para5_10*.pkl')
 
     # 处理每个文件
     for file_path in file_paths:
@@ -161,7 +161,7 @@ if __name__ == "__main__":
         data = read_pkl_file(file_path)
 
         # 保存 test_partial_list 的图片
-        test_partial_list = data['test_partial_list']
+        test_partial_list = data['test_partial_list']  
         pdf_path_partial = f'/home/lianyaoxiu/lianyaoxiu/Infinity/outputs/plots25/{osp.basename(file_path).replace(".pkl", "_test_partial_list_images.pdf")}'
         save_tensors_to_pdf(test_partial_list, pdf_path_partial, vae, "Test Partial List Images")
 
