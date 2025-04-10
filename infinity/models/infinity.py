@@ -1,5 +1,6 @@
 """
 Definition of Infinity transformer model.
+测试每个stage每个block结果的概率和sample（0，1）
 """
 import matplotlib.pyplot as plt
 import math
@@ -846,10 +847,14 @@ class Infinity(nn.Module):
             #     # ttt1 = time.time() * 1e3
             #     #print(f"block {block_idx} exec: {ttt1 - ttt0:.2f}ms")
 
-        with open(f'outputs/codes/test_pixel_combined_data_{category}.pkl', 'rb') as file:
-            data = pickle.load(file)
+        # with open(f'outputs/codes/test_pixel_combined_data_{category}.pkl', 'rb') as file:
+        #     data = pickle.load(file)
         
-        for si, value in data['partial_codes_data'].items():
+        with open(f'outputs/codes/test_pixel_partialblock_data_{category}.pkl', 'rb') as file:
+            data = pickle.load(file)
+
+        # for si, value in data['partial_codes_data'].items():
+        for si, value in data.items():
             pn = scale_schedule[si]
             for i in range(len(value)):
                 last_stage = value[i]
@@ -943,7 +948,7 @@ class Infinity(nn.Module):
         }
         if save_probs:
             # 保存 probs_data 到 pkl 文件
-            with open(f'outputs/codes/test_pixel_prob_{category}.pkl', 'wb') as f:
+            with open(f'outputs/codes/test_pixel_partialblock_prob_{category}.pkl', 'wb') as f:
                 pickle.dump(probs_data, f)
 
         # 保存 loss_data 到 pkl 文件
