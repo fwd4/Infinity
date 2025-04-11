@@ -700,8 +700,8 @@ class Infinity(nn.Module):
         skip_mode = False
         compute_loss = False
         save_codes = False
-        with open('skip_list.pkl', 'rb') as f:
-            skip_list = pickle.load(f)
+        # with open('skip_list.pkl', 'rb') as f:
+        #     skip_list = pickle.load(f)
         profile = False
 
         # 用于存储每个scale的codes和summed_codes
@@ -740,6 +740,8 @@ class Infinity(nn.Module):
 
                     for ii, m in enumerate(b.module):
                         block_number = block_idx * 4 + ii
+                        if si >= 3 and block_number >= 26:
+                            continue 
                         current_stage = last_stage.clone()
                         last_stage = m(x=last_stage, cond_BD=cond_BD_or_gss, ca_kv=ca_kv, attn_bias_or_two_vector=None, attn_fn=attn_fn, scale_schedule=scale_schedule, rope2d_freqs_grid=self.rope2d_freqs_grid, scale_ind=si)
                         partial_codes_data[si].append(last_stage)
@@ -860,6 +862,8 @@ class Infinity(nn.Module):
 
                     for ii, m in enumerate(b.module):
                         block_number = block_idx * 4 + ii
+                        if si >= 3 and block_number >= 26:
+                            continue 
                         current_stage = last_stage.clone()
                         last_stage = m(x=last_stage, cond_BD=cond_BD_or_gss, ca_kv=ca_kv, attn_bias_or_two_vector=None, attn_fn=attn_fn, scale_schedule=scale_schedule, rope2d_freqs_grid=self.rope2d_freqs_grid, scale_ind=si)
                         partial_codes_data[si].append(last_stage)
@@ -930,8 +934,8 @@ class Infinity(nn.Module):
             'test_partial_list': test_partial_list,
             'summed_codes_8': summed_codes_8
         }
-        with open(f'outputs/codes/test_para5_10_combined_data_{category}.pkl', 'wb') as f:
-            pickle.dump(combined_data, f)
+        # with open(f'outputs/codes/test_para5_10_combined_data_{category}.pkl', 'wb') as f:
+        #     pickle.dump(combined_data, f)
 
 
         # 将 codes_data 和 summed_codes_data 合并到一个字典中
