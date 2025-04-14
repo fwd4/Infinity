@@ -40,20 +40,20 @@ scores_ = []
 
 def precompute_rope2d_freqs_grid(dim, dynamic_resolution_h_w, rope2d_normalized_by_hw, pad_to_multiplier=1, max_height=2048 // 16, max_width=2048 // 16, base=10000.0, device=None, scaling_factor=1.0):
     # split the dimension into half, one for x and one for y
-    half_dim = dim // 2
-    inv_freq = 1.0 / (base ** (torch.arange(0, half_dim, 2, dtype=torch.int64).float().to(device) / half_dim)) # namely theta, 1 / (10000^(i/half_dim)), i=0,2,..., half_dim-2
-    t_height = torch.arange(max_height, device=device, dtype=torch.int64).type_as(inv_freq)
+    half_dim = dim // 2  #64
+    inv_freq = 1.0 / (base ** (torch.arange(0, half_dim, 2, dtype=torch.int64).float().to(device) / half_dim)) # namely theta, 1 / (10000^(i/half_dim)), i=0,2,..., half_dim-2    shape:[32]
+    t_height = torch.arange(max_height, device=device, dtype=torch.int64).type_as(inv_freq) #shape [128]
     t_width = torch.arange(max_width, device=device, dtype=torch.int64).type_as(inv_freq)
     t_height = t_height / scaling_factor
-    freqs_height = torch.outer(t_height, inv_freq)  # (max_height, dim / (1 for 1d, 2 for 2d, 3 for 3d) / 2), namely y*theta
+    freqs_height = torch.outer(t_height, inv_freq)  # (max_height, dim / (1 for 1d, 2 for 2d, 3 for 3d) / 2), namely y*theta  shape：torch.Size([128, 32])
     t_width = t_width / scaling_factor
-    freqs_width = torch.outer(t_width, inv_freq)  # (max_width, dim / (1 for 1d, 2 for 2d, 3 for 3d) / 2), namely x*theta
+    freqs_width = torch.outer(t_width, inv_freq)  # (max_width, dim / (1 for 1d, 2 for 2d, 3 for 3d) / 2), namely x*theta  shape：torch.Size([128, 32])
     freqs_grid_map = torch.concat([
-        freqs_height[:, None, :].expand(-1, max_width, -1), # (max_height, max_width, dim / (1 for 1d, 2 for 2d, 3 for 3d) / 2)
-        freqs_width[None, :, :].expand(max_height, -1, -1), # (max_height, max_width, dim / (1 for 1d, 2 for 2d, 3 for 3d) / 2)
-    ], dim=-1)  # (max_height, max_width, dim / (1 for 1d, 2 for 2d, 3 for 3d))
+        freqs_height[:, None, :].expand(-1, max_width, -1), # (max_height, max_width, dim / (1 for 1d, 2 for 2d, 3 for 3d) / 2)  shape：torch.Size([128, 128, 32])  每一行一样
+        freqs_width[None, :, :].expand(max_height, -1, -1), # (max_height, max_width, dim / (1 for 1d, 2 for 2d, 3 for 3d) / 2)  shape：torch.Size([128, 128, 32])  每一行不一样
+    ], dim=-1)  # (max_height, max_width, dim / (1 for 1d, 2 for 2d, 3 for 3d))   shape: torch.Size([128, 128, 64])
     freqs_grid_map = torch.stack([torch.cos(freqs_grid_map), torch.sin(freqs_grid_map)], dim=0)
-    # (2, max_height, max_width, dim / (1 for 1d, 2 for 2d, 3 for 3d))
+    # (2, max_height, max_width, dim / (1 for 1d, 2 for 2d, 3 for 3d))   (2,128,128,64)
 
     rope2d_freqs_grid = {}
     for h_div_w in dynamic_resolution_h_w:
@@ -76,18 +76,18 @@ def precompute_rope2d_freqs_grid(dim, dynamic_resolution_h_w, rope2d_normalized_
                     (torch.arange(ph) * (uph / ph)).reshape(ph, 1).expand(ph, pw),
                     (torch.arange(pw) * (upw / pw)).reshape(1, pw).expand(ph, pw),
                 ], dim=-1).round().int() # (ph, pw, 2)
-                indices = indices.reshape(-1, 2) # (ph*pw, 2)
-                rope_cache = freqs_grid_map[:, indices[:,0], indices[:,1], :] # (2, ph*pw, half_head_dim)
+                indices = indices.reshape(-1, 2) # (ph*pw, 2)  tensor([[0, 0]], dtype=torch.int32)
+                rope_cache = freqs_grid_map[:, indices[:,0], indices[:,1], :] # (2, ph*pw, half_head_dim) 2:(cos,sin)
                 rope_cache = rope_cache.reshape(2, ph, pw, -1)
             elif rope2d_normalized_by_hw == 0:
                 rope_cache = freqs_grid_map[:, :ph, :pw, :] # (2, ph, pw, half_head_dim)
             else:
                 raise ValueError(f'Unknown rope2d_normalized_by_hw: {rope2d_normalized_by_hw}')
             rope_cache_list.append(rope_cache.reshape(2, ph_mul_pw, -1))
-        cat_rope_cache = torch.cat(rope_cache_list, 1) # (2, seq_len, half_head_dim)
-        if cat_rope_cache.shape[1] % pad_to_multiplier:
+        cat_rope_cache = torch.cat(rope_cache_list, 1) # (2, seq_len, half_head_dim) ################torch.Size([2, 10521, 64])
+        if cat_rope_cache.shape[1] % pad_to_multiplier:  #10521 % 128 = 25
             pad = torch.zeros(2, pad_to_multiplier - cat_rope_cache.shape[1] % pad_to_multiplier, half_dim)
-            cat_rope_cache = torch.cat([cat_rope_cache, pad], dim=1)
+            cat_rope_cache = torch.cat([cat_rope_cache, pad], dim=1)  ###############        #shape: torch.Size([2, 10624, 64])
         cat_rope_cache = cat_rope_cache[:,None,None,None] # (2, 1, 1, 1, seq_len, half_dim)
         for pn in dynamic_resolution_h_w[h_div_w]:
             scale_schedule = dynamic_resolution_h_w[h_div_w][pn]['scales']
@@ -109,8 +109,10 @@ def apply_rotary_emb(q, k, scale_schedule, rope2d_freqs_grid, pad_to_multiplier,
         if scale_ind >= 1:
             assert len(scale_schedule[0]) == 3
             start = np.sum([item[0] * item[1] * item[2] for item in scale_schedule[:scale_ind]])
+
         rope2d_freqs_grid[str(tuple(scale_schedule))] = rope2d_freqs_grid[str(tuple(scale_schedule))].to(qk.device)
-        assert start+seq_len <= rope2d_freqs_grid[str(tuple(scale_schedule))].shape[4]
+        
+        assert start+seq_len <= rope2d_freqs_grid[str(tuple(scale_schedule))].shape[4]  
         rope_cache = rope2d_freqs_grid[str(tuple(scale_schedule))][:, :, :, :, start:start+seq_len] # rope_cache shape: [2, 1, 1, 1, seq_len, half_head_dim]
         qk = qk.reshape(*qk.shape[:-1], -1, 2) #(2, batch_size, heads, seq_len, half_head_dim, 2)
         qk = torch.stack([
