@@ -140,7 +140,7 @@ get_torch_mem_usage()
 
 prompts = {
     "vintage_insect": "A highly detailed, photorealistic insect sculpture crafted entirely from vintage 1960s electronic components, including capacitors, resistors, transistors, wires, diodes, solder, and circuit boards. The piece should showcase intricate textures and a retro-futuristic aesthetic.",
-    # "macro_closeup": "An extreme macro cinematographic close-up shot inspired by Denis Villeneuve's style, focusing on the intricate details of water droplets, ripples, or reflections, with a moody and atmospheric lighting.",
+    "macro_closeup": "Denis Villeneuve's extreme macro cinematographic close-up in water.",
     "3d_school": "A vibrant and creative 3D render designed for the bottom of a mobile application's homepage, featuring a charming miniature school surrounded by tiny children carrying colorful backpacks, set in a playful and imaginative environment.",
     "explore_more": "A stunning and adventurous image featuring the text 'Explore More' in a bold, adventurous font, placed over a scenic hiking trail with lush greenery, towering mountains, and a clear blue sky, evoking a sense of wanderlust.",
     "toy_car": "A close-up, cinematic shot of a diecast toy car in a meticulously crafted diorama setting. The scene is set at night, with warm lights glowing from tiny windows, bokeh effects in the background, and a gentle dusting of snow adding a cozy, wintery ambiance.",
@@ -164,7 +164,7 @@ prompts = {
     # "blueberry_simple": "Fresh blueberries on a white background."  
 }
 # OUTPUT
-output_dir = "./outputs/pics3"
+output_dir = "./outputs/pics_mtp"
 os.makedirs(output_dir, exist_ok=True)
 
 img_cnt = 0
@@ -234,14 +234,14 @@ for category, prompt in prompts.items():
         verbose=False,
     )
 
-    img_cnt+=1
-    if img_cnt == 1:
-        exit(0)
+    # img_cnt+=1
+    # if img_cnt == 1:
+    #     exit(0)
 
     # SAVE
-    save_pic = False
+    save_pic = True
     if save_pic:
-        save_path = osp.join(output_dir, f"{category}_orign.jpg")
+        save_path = osp.join(output_dir, f"{category}_10_mtp.jpg")
         cv2.imwrite(save_path, generated_image.cpu().numpy())
         print(f"{category} image saved to {save_path}")
 
