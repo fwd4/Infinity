@@ -12,10 +12,14 @@ import matplotlib.pyplot as plt
 import os
 from matplotlib.backends.backend_pdf import PdfPages
 
-model_path = '/share/public/public_models/Infinity/infinity_2b_reg.pth'   #'/home/model_data/infinity_2b_reg.pth'
-vae_path = '/share/public/public_models/Infinity/infinity_vae_d32reg.pth' #'/home/model_data/infinity_vae_d32reg.pth'
-text_encoder_ckpt = '/share/public/public_models/Infinity/flan-t5-xl'     #'/home/model_data/flan-t5-xl'
- 
+# model_path = '/share/public/public_models/Infinity/infinity_2b_reg.pth'   #'/home/model_data/infinity_2b_reg.pth'
+# vae_path = '/share/public/public_models/Infinity/infinity_vae_d32reg.pth' #'/home/model_data/infinity_vae_d32reg.pth'
+# text_encoder_ckpt = '/share/public/public_models/Infinity/flan-t5-xl'     #'/home/model_data/flan-t5-xl'
+
+model_path = '/home/model_data/infinity_2b_reg.pth'   #'/home/model_data/infinity_2b_reg.pth'
+vae_path = '/home/model_data/infinity_vae_d32reg.pth' #'/home/model_data/infinity_vae_d32reg.pth'
+text_encoder_ckpt = '/home/model_data/flan-t5-xl'     #'/home/model_data/flan-t5-xl'
+
 import torch
 import warnings  
 # 忽略 FutureWarning 类型的警告  
@@ -230,9 +234,9 @@ for category, prompt in prompts.items():
         verbose=False,
     )
 
-    # img_cnt+=1
-    # if img_cnt == 1:
-    #     exit(0)
+    img_cnt+=1
+    if img_cnt == 1:
+        exit(0)
 
     # SAVE
     save_pic = False
