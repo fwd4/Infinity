@@ -721,10 +721,10 @@ class Infinity(nn.Module):
         skip_mode = False
         compute_loss = False
         save_codes = False
-        save_para_codes = True
+        save_para_codes = False
         with open('skip_list.pkl', 'rb') as f:
             skip_list = pickle.load(f)
-        profile = False
+        profile = True
 
         # 用于存储每个scale的codes和summed_codes
         si_para = 9
@@ -754,6 +754,7 @@ class Infinity(nn.Module):
                     attn_fn = self.attn_fn_compile_dict.get(tuple(scale_schedule[:(si+1)]), None)
 
                 if profile:
+                    torch.cuda.synchronize()
                     t1 = time.time() * 1e3
 
                 layer_idx = 0    
@@ -794,6 +795,7 @@ class Infinity(nn.Module):
                             layer_idx += 1                
 
                 if profile:
+                    torch.cuda.synchronize()
                     t2 = time.time() * 1e3
 
                 ######################### 1 #############################
@@ -833,7 +835,7 @@ class Infinity(nn.Module):
                     if si == si_para:
                         summed_codes_para = summed_codes.clone()  # Save summed_codes for stage 8
                         continue
-
+                        
                     last_stage = F.interpolate(summed_codes, size=vae_scale_schedule[si+1], mode=vae.quantizer.z_interplote_up) # [B, d, 1, h, w] or [B, d, 1, 2h, 2w]
                     
                     ######################### 2.1 #############################
@@ -856,10 +858,14 @@ class Infinity(nn.Module):
                 ######################### 2.2 #############################
 
                 if profile:
+                    torch.cuda.synchronize()
                     t3 = time.time() * 1e3
                     print(f"stage {si}, {pn}, all {t3 - t0:.2f}ms, {t1 - t0:.2f}ms, 32block {t2 - t1:.2f}ms, {t3 - t2:.2f}ms")
 
             if si > si_para:
+                if profile:
+                    torch.cuda.synchronize()
+                    t0 = time.time() * 1e3
                 last_stage = F.interpolate(summed_codes_para, size=vae_scale_schedule[si], mode=vae.quantizer.z_interplote_up) # [B, d, 1, h, w] or [B, d, 1, 2h, 2w]
                 if si == 10:
                     _,_,mask_minus = get_freq(last_stage,pn[1])                    
@@ -899,6 +905,9 @@ class Infinity(nn.Module):
                 last_stage_gather = last_stage[:, mask_minus, :]
                 ######################### 2.2 #############################
                 layer_idx = 0
+                if profile:
+                    torch.cuda.synchronize()
+                    t1 = time.time() * 1e3
                 for block_idx, b in enumerate(self.block_chunks):
                     if self.add_lvl_embeding_only_first_block and block_idx == 0:
                         last_stage_gather = self.add_lvl_embeding(last_stage_gather, si, scale_schedule, need_to_pad=need_to_pad)
@@ -935,6 +944,10 @@ class Infinity(nn.Module):
                             last_stage_gather = torch.cat((last_stage_gather, last_stage_gather), 0)
                             layer_idx += 1                
 
+                
+                if profile:
+                    torch.cuda.synchronize()
+                    t2 = time.time() * 1e3
                 ######################### 1 #############################
                 # last_stage = last_stage.to(torch.float32) 
                 # last_stage = torch.zeros(last_stage.shape, device = last_stage.device).to(torch.float32)  
@@ -990,6 +1003,11 @@ class Infinity(nn.Module):
                     # summed_codes_5 += codes
                     test_partial_list.append(codes)
     
+                if profile:
+                    torch.cuda.synchronize()
+                    t3 = time.time() * 1e3
+                    print(f"stage {si}, {pn}, all {t3 - t0:.2f}ms, {t1 - t0:.2f}ms, 32block {t2 - t1:.2f}ms, {t3 - t2:.2f}ms")
+
         # Save the data to pkl files
         combined_data = {
             'test_partial_list': test_partial_list,
@@ -1032,7 +1050,7 @@ class Infinity(nn.Module):
             img = vae.decode(summed_codes.squeeze(-3))
         else:
             img = vae.viz_from_ms_h_BChw(ret, scale_schedule=scale_schedule, same_shape=True, last_one=True)
-        # tt3 = time.time() * 1e3
+        tt3 = time.time() * 1e3
 
         img = (img + 1) / 2
         img = img.permute(0, 2, 3, 1).mul_(255).to(torch.uint8).flip(dims=(3,))
