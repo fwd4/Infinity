@@ -23,9 +23,9 @@ import numpy as np
 from scipy.special import rel_entr  # 用于计算 KL 散度
 import os
 
-model_path = '/share/public/public_models/Infinity/infinity_2b_reg.pth'   #'/home/model_data/infinity_2b_reg.pth'
-vae_path = '/share/public/public_models/Infinity/infinity_vae_d32reg.pth' #'/home/model_data/infinity_vae_d32reg.pth'
-text_encoder_ckpt = '/share/public/public_models/Infinity/flan-t5-xl'     #'/home/model_data/flan-t5-xl'
+model_path = '/share/public_models/Infinity/infinity_2b_reg.pth'   #'/home/model_data/infinity_2b_reg.pth'
+vae_path = '/share/public_models/Infinity/infinity_vae_d32reg.pth' #'/home/model_data/infinity_vae_d32reg.pth'
+text_encoder_ckpt = '/share/public_models/flan-t5-xl'     #'/home/model_data/flan-t5-xl'
  
 import torch
 import warnings  
@@ -72,7 +72,7 @@ def save_tensors_to_pdf(tensor_list, pdf_path, vae, title):
 if __name__ == "__main__":
     prompts = {
         "vintage_insect": "A highly detailed, photorealistic insect sculpture crafted entirely from vintage 1960s electronic components, including capacitors, resistors, transistors, wires, diodes, solder, and circuit boards. The piece should showcase intricate textures and a retro-futuristic aesthetic.",
-        # "macro_closeup": "An extreme macro cinematographic close-up shot inspired by Denis Villeneuve's style, focusing on the intricate details of water droplets, ripples, or reflections, with a moody and atmospheric lighting.",
+        "macro_closeup": "An extreme macro cinematographic close-up shot inspired by Denis Villeneuve's style, focusing on the intricate details of water droplets, ripples, or reflections, with a moody and atmospheric lighting.",
         "3d_school": "A vibrant and creative 3D render designed for the bottom of a mobile application's homepage, featuring a charming miniature school surrounded by tiny children carrying colorful backpacks, set in a playful and imaginative environment.",
         "explore_more": "A stunning and adventurous image featuring the text 'Explore More' in a bold, adventurous font, placed over a scenic hiking trail with lush greenery, towering mountains, and a clear blue sky, evoking a sense of wanderlust.",
         "toy_car": "A close-up, cinematic shot of a diecast toy car in a meticulously crafted diorama setting. The scene is set at night, with warm lights glowing from tiny windows, bokeh effects in the background, and a gentle dusting of snow adding a cozy, wintery ambiance.",
@@ -153,7 +153,7 @@ if __name__ == "__main__":
     #         plt.close(fig)
 
     #     print(f"Processing for file {file_path} completed!")
-    file_paths = glob.glob('/home/lianyaoxiu/lianyaoxiu/Infinity/outputs/codes/test_para10*.pkl')
+    file_paths = glob.glob('/root/lianyaoxiu/lianyaoxiu/Infinity/outputs/codes_mtp/test_combined_data_*.pkl')
 
     # 处理每个文件
     for file_path in file_paths:
@@ -162,13 +162,13 @@ if __name__ == "__main__":
 
         # 保存 test_partial_list 的图片
         test_partial_list = data['test_partial_list']  
-        pdf_path_partial = f'/home/lianyaoxiu/lianyaoxiu/Infinity/outputs/plots25/{osp.basename(file_path).replace(".pkl", "_test_partial_list_images.pdf")}'
+        pdf_path_partial = f'/root/lianyaoxiu/lianyaoxiu/Infinity/outputs/plots_para/{osp.basename(file_path).replace(".pkl", "_test_partial_list_images.pdf")}'
         save_tensors_to_pdf(test_partial_list, pdf_path_partial, vae, "Test Partial List Images")
 
         # 保存 summed_codes_8 的图片
-        summed_codes_8 = data['summed_codes_10']
+        summed_codes_8 = data['summed_codes_para']
         summed_codes_8_image = tensor_to_image(summed_codes_8, vae)
-        pdf_path_summed = f'/home/lianyaoxiu/lianyaoxiu/Infinity/outputs/plots25/{osp.basename(file_path).replace(".pkl", "_summed_codes_8_images.pdf")}'
+        pdf_path_summed = f'/root/lianyaoxiu/lianyaoxiu/Infinity/outputs/plots_para/{osp.basename(file_path).replace(".pkl", "_summed_codes_para_images.pdf")}'
         with PdfPages(pdf_path_summed) as pdf:
             fig = plt.figure(figsize=(8, 8))
             plt.imshow(summed_codes_8_image)
@@ -178,9 +178,9 @@ if __name__ == "__main__":
             plt.close(fig)
 
         # 计算所有值的总和并保存为图片
-        total_sum_tensor = sum(test_partial_list) + data['summed_codes_10']
+        total_sum_tensor = sum(test_partial_list) + data['summed_codes_para']
         total_sum_image = tensor_to_image(total_sum_tensor, vae)
-        pdf_path_total = f'/home/lianyaoxiu/lianyaoxiu/Infinity/outputs/plots25/{osp.basename(file_path).replace(".pkl", "_total_sum_image.pdf")}'
+        pdf_path_total = f'/root/lianyaoxiu/lianyaoxiu/Infinity/outputs/plots_para/{osp.basename(file_path).replace(".pkl", "_total_sum_image.pdf")}'
         with PdfPages(pdf_path_total) as pdf:
             fig = plt.figure(figsize=(8, 8))
             plt.imshow(total_sum_image)

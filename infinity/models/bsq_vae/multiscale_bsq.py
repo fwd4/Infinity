@@ -547,32 +547,32 @@ class BSQ(Module):
             if label_type == 'int_label':
                 indices = rearrange(indices, '... -> ... 1')
             else:
-                indices = indices.unsqueeze(-2)
-
+                indices = indices.unsqueeze(-2)     #[1,1,48,48,1,32]
+    
         # indices to codes, which are bits of either -1 or 1
 
         if label_type == 'int_label':
             assert indices[..., None].int().min() > 0
             bits = ((indices[..., None].int() & self.mask) != 0).float() # .to(self.dtype)
         else:
-            bits = indices
+            bits = indices  
 
-        codes = self.bits_to_codes(bits)
+        codes = self.bits_to_codes(bits)  ##[1,1,48,48,1,32]
 
-        codes = l2norm(codes) # must normalize when using BSQ
+        codes = l2norm(codes) # must normalize when using BSQ   #[1,1,48,48,1,32]
 
-        codes = rearrange(codes, '... c d -> ... (c d)')
+        codes = rearrange(codes, '... c d -> ... (c d)')  #[1,1,48,48,1,32] --> [1,1,48,48,32]
 
         # whether to project codes out to original dimensions
         # if the input feature dimensions were not log2(codebook size)
 
         if project_out:
-            codes = self.project_out(codes)
+            codes = self.project_out(codes)  #[1,1,48,48,32]
 
         # rearrange codes back to original shape
 
         if should_transpose:
-            codes = rearrange(codes, 'b ... d -> b d ...')
+            codes = rearrange(codes, 'b ... d -> b d ...')  ##[1,1,48,48,32]-->[1,32,1,48,48]
 
         return codes
 

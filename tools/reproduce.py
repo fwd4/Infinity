@@ -12,13 +12,13 @@ import matplotlib.pyplot as plt
 import os
 from matplotlib.backends.backend_pdf import PdfPages
 
-# model_path = '/share/public/public_models/Infinity/infinity_2b_reg.pth'   #'/home/model_data/infinity_2b_reg.pth'
-# vae_path = '/share/public/public_models/Infinity/infinity_vae_d32reg.pth' #'/home/model_data/infinity_vae_d32reg.pth'
-# text_encoder_ckpt = '/share/public/public_models/Infinity/flan-t5-xl'     #'/home/model_data/flan-t5-xl'
+model_path = '/share/public_models/Infinity/infinity_2b_reg.pth'   #'/home/model_data/infinity_2b_reg.pth'
+vae_path = '/share/public_models/Infinity/infinity_vae_d32reg.pth' #'/home/model_data/infinity_vae_d32reg.pth'
+text_encoder_ckpt = '/share/public_models/flan-t5-xl'     #'/home/model_data/flan-t5-xl'
 
-model_path = '/home/model_data/infinity_2b_reg.pth'   #'/home/model_data/infinity_2b_reg.pth'
-vae_path = '/home/model_data/infinity_vae_d32reg.pth' #'/home/model_data/infinity_vae_d32reg.pth'
-text_encoder_ckpt = '/home/model_data/flan-t5-xl'     #'/home/model_data/flan-t5-xl'
+# model_path = '/home/model_data/infinity_2b_reg.pth'   #'/home/model_data/infinity_2b_reg.pth'
+# vae_path = '/home/model_data/infinity_vae_d32reg.pth' #'/home/model_data/infinity_vae_d32reg.pth'
+# text_encoder_ckpt = '/home/model_data/flan-t5-xl'     #'/home/model_data/flan-t5-xl'
 
 import torch
 import warnings  
@@ -241,7 +241,7 @@ for category, prompt in prompts.items():
     # SAVE
     save_pic = True
     if save_pic:
-        save_path = osp.join(output_dir, f"{category}_10_mtp.jpg")
+        save_path = osp.join(output_dir, f"{category}_10_mtp_50_15_5.1.jpg")
         cv2.imwrite(save_path, generated_image.cpu().numpy())
         print(f"{category} image saved to {save_path}")
 

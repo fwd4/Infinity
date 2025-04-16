@@ -19,7 +19,7 @@ from transformers import AutoTokenizer, T5EncoderModel, T5TokenizerFast
 from PIL import Image, ImageEnhance
 import torch.nn.functional as F
 from torch.cuda.amp import autocast
-import cupy
+# import cupy
 
 import sys
 path_to_add = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..') 
