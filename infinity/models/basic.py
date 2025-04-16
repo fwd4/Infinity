@@ -113,7 +113,10 @@ def apply_rotary_emb(q, k, mask_id, scale_schedule, rope2d_freqs_grid, pad_to_mu
         rope2d_freqs_grid[str(tuple(scale_schedule))] = rope2d_freqs_grid[str(tuple(scale_schedule))].to(qk.device)
         
         assert start+seq_len <= rope2d_freqs_grid[str(tuple(scale_schedule))].shape[4]  
-        rope_cache = rope2d_freqs_grid[str(tuple(scale_schedule))][:, :, :, :, start+mask_id] #start:start+seq_len # rope_cache shape: [2, 1, 1, 1, seq_len, half_head_dim]
+        if mask_id ==  None:
+            rope_cache = rope2d_freqs_grid[str(tuple(scale_schedule))][:, :, :, :, start:start+seq_len]
+        else:
+            rope_cache = rope2d_freqs_grid[str(tuple(scale_schedule))][:, :, :, :, start+mask_id] #start:start+seq_len # rope_cache shape: [2, 1, 1, 1, seq_len, half_head_dim]
         qk = qk.reshape(*qk.shape[:-1], -1, 2) #(2, batch_size, heads, seq_len, half_head_dim, 2)
         qk = torch.stack([
             rope_cache[0] * qk[...,0] - rope_cache[1] * qk[...,1],
@@ -312,7 +315,7 @@ class SelfAttention(nn.Module):
             q, k = apply_rotary_emb(q, k, mask_id, scale_schedule, rope2d_freqs_grid, self.pad_to_multiplier, self.rope2d_normalized_by_hw, scale_ind, self.using_flash) #, freqs_cis=freqs_cis)
             #q_, k_ = apply_rotary_emb(q_, k_, scale_schedule, rope2d_freqs_grid, self.pad_to_multiplier, self.rope2d_normalized_by_hw, scale_ind, 1) #, freqs_cis=freqs_cis)
         if self.caching:    # kv caching: only used during inference
-            if si <=9 :
+            if si <= 9 :
                 if self.cached_k is None: 
                     self.cached_k = k; self.cached_v = v
                     #self.cached_k_ = k_; self.cached_v_ = v_
@@ -322,7 +325,7 @@ class SelfAttention(nn.Module):
             else:
                 k = torch.cat((self.cached_k, k), dim=L_dim)
                 v = torch.cat((self.cached_v, v), dim=L_dim)
-                print("si, k.shape", si, k.shape)
+                # print("si, k.shape", si, k.shape)
         # torch.testing.assert_close(q, q_.transpose(1, 2))
         # torch.testing.assert_close(k, k_.transpose(1, 2))
         # torch.testing.assert_close(v, v_.transpose(1, 2))

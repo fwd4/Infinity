@@ -39,9 +39,15 @@ def get_freq(codes,pn):
     _, top50 = torch.topk(dc_diff, total_sz * 50 // 100)
     _, top15 = torch.topk(dc_diff, total_sz * 15 // 100)
     _, top5 = torch.topk(dc_diff, total_sz * 5 // 100)
-    mask_minus_1 = set(top5.cpu().numpy())
-    mask_minus_2 = set(top15.cpu().numpy()) - mask_minus_1
-    mask_minus_3 = set(top50.cpu().numpy()) - mask_minus_2
+    _, top100 = torch.topk(dc_diff, total_sz * 100 // 100)
+    mask_minus_1_set = set(top5.cpu().numpy())
+    mask_minus_2_set = set(top15.cpu().numpy()) - set(top5.cpu().numpy())
+    mask_minus_3_set = set(top50.cpu().numpy()) - set(top15.cpu().numpy())
+    device = codes.device  
+    mask_minus_1 = torch.tensor(list(mask_minus_1_set), dtype=torch.long, device=device)  
+    mask_minus_2 = torch.tensor(list(mask_minus_2_set), dtype=torch.long, device=device)  
+    mask_minus_3 = torch.tensor(list(mask_minus_3_set), dtype=torch.long, device=device)  
+
     return mask_minus_1, mask_minus_2, mask_minus_3
 
 def cosine_similarity(matrix1, matrix2):  
@@ -715,7 +721,7 @@ class Infinity(nn.Module):
         skip_mode = False
         compute_loss = False
         save_codes = False
-        save_para_codes = False
+        save_para_codes = True
         with open('skip_list.pkl', 'rb') as f:
             skip_list = pickle.load(f)
         profile = False
@@ -727,8 +733,11 @@ class Infinity(nn.Module):
         partial_codes_data = {si: [] for si in range(len(scale_schedule))}
         test_partial_list = []
         test_partial_list0 = []  
+        mask_minus = None
 
         for si, pn in enumerate(scale_schedule):   # si: i-th segment
+            # if si>=11:
+            #     break
             if si <= si_para:
                 if profile:
                     t0 = time.time() * 1e3
@@ -759,7 +768,7 @@ class Infinity(nn.Module):
                     for ii, m in enumerate(b.module):
                         block_number = block_idx * 4 + ii
                         current_stage = last_stage.clone()
-                        last_stage = m(x=last_stage, cond_BD=cond_BD_or_gss, ca_kv=ca_kv, attn_bias_or_two_vector=None, attn_fn=attn_fn, scale_schedule=scale_schedule, rope2d_freqs_grid=self.rope2d_freqs_grid, scale_ind=si)
+                        last_stage = m(x=last_stage, si = si, mask_id = mask_minus, cond_BD=cond_BD_or_gss, ca_kv=ca_kv, attn_bias_or_two_vector=None, attn_fn=attn_fn, scale_schedule=scale_schedule, rope2d_freqs_grid=self.rope2d_freqs_grid, scale_ind=si)
                         partial_codes_data[si].append(last_stage)
 
                         if compute_loss:
@@ -860,7 +869,6 @@ class Infinity(nn.Module):
                         last_stage = torch.nn.functional.pixel_unshuffle(last_stage, 2) # [B, 4d, h, w]
                     last_stage = last_stage.reshape(*last_stage.shape[:2], -1) # [B, d, h*w] or [B, 4d, h*w]
                     last_stage = torch.permute(last_stage, [0,2,1]) # [B, h*w, d] or [B, h*w, 4d]
-                    last_stage = last_stage[:, mask_minus, :]
                     ######################### 2.1 #############################
 
                 if si == 11:
@@ -871,7 +879,6 @@ class Infinity(nn.Module):
                         last_stage = torch.nn.functional.pixel_unshuffle(last_stage, 2) # [B, 4d, h, w]
                     last_stage = last_stage.reshape(*last_stage.shape[:2], -1) # [B, d, h*w] or [B, 4d, h*w]
                     last_stage = torch.permute(last_stage, [0,2,1]) # [B, h*w, d] or [B, h*w, 4d]
-                    last_stage = last_stage[:, mask_minus, :]
                     ######################### 2.1 #############################
 
                 if si == 12:
@@ -882,7 +889,6 @@ class Infinity(nn.Module):
                         last_stage = torch.nn.functional.pixel_unshuffle(last_stage, 2) # [B, 4d, h, w]
                     last_stage = last_stage.reshape(*last_stage.shape[:2], -1) # [B, d, h*w] or [B, 4d, h*w]
                     last_stage = torch.permute(last_stage, [0,2,1]) # [B, h*w, d] or [B, h*w, 4d]
-                    last_stage = last_stage[:, mask_minus, :]
                     ######################### 2.1 #############################
 
                 ######################### 2.2 #############################            
@@ -890,21 +896,22 @@ class Infinity(nn.Module):
                 summed_codes_data[si].append(summed_codes.cpu().numpy())
                 last_stage = self.word_embed(self.norm0_ve(last_stage))
                 last_stage = last_stage.repeat(bs//B, 1, 1)
+                last_stage_gather = last_stage[:, mask_minus, :]
                 ######################### 2.2 #############################
                 layer_idx = 0
                 for block_idx, b in enumerate(self.block_chunks):
                     if self.add_lvl_embeding_only_first_block and block_idx == 0:
-                        last_stage = self.add_lvl_embeding(last_stage, si, scale_schedule, need_to_pad=need_to_pad)
-                        partial_codes_data[si].append(last_stage)
+                        last_stage_gather = self.add_lvl_embeding(last_stage_gather, si, scale_schedule, need_to_pad=need_to_pad)
+                        partial_codes_data[si].append(last_stage_gather)
                     if not self.add_lvl_embeding_only_first_block: 
-                        last_stage = self.add_lvl_embeding(last_stage, si, scale_schedule, need_to_pad=need_to_pad)
-                        partial_codes_data[si].append(last_stage)
+                        last_stage_gather = self.add_lvl_embeding(last_stage_gather, si, scale_schedule, need_to_pad=need_to_pad)
+                        partial_codes_data[si].append(last_stage_gather)
 
                     for ii, m in enumerate(b.module):
                         block_number = block_idx * 4 + ii
-                        current_stage = last_stage.clone()
-                        last_stage = m(x=last_stage, si = si, mask_id = mask_minus, cond_BD=cond_BD_or_gss, ca_kv=ca_kv, attn_bias_or_two_vector=None, attn_fn=attn_fn, scale_schedule=scale_schedule, rope2d_freqs_grid=self.rope2d_freqs_grid, scale_ind=si)
-                        partial_codes_data[si].append(last_stage)
+                        current_stage = last_stage_gather.clone()
+                        last_stage_gather = m(x=last_stage_gather, si = si, mask_id = mask_minus, cond_BD=cond_BD_or_gss, ca_kv=ca_kv, attn_bias_or_two_vector=None, attn_fn=attn_fn, scale_schedule=scale_schedule, rope2d_freqs_grid=self.rope2d_freqs_grid, scale_ind=si)
+                        partial_codes_data[si].append(last_stage_gather)
 
                         if compute_loss:
                             if loss_func == 'MSE':                    
@@ -924,11 +931,15 @@ class Infinity(nn.Module):
                             loss_data[si].append(loss)
 
                         if (cfg != 1) and (layer_idx in abs_cfg_insertion_layers):
-                            last_stage = cfg * last_stage[:B] + (1-cfg) * last_stage[B:]
-                            last_stage = torch.cat((last_stage, last_stage), 0)
+                            last_stage_gather = cfg * last_stage_gather[:B] + (1-cfg) * last_stage_gather[B:]
+                            last_stage_gather = torch.cat((last_stage_gather, last_stage_gather), 0)
                             layer_idx += 1                
 
                 ######################### 1 #############################
+                # last_stage = last_stage.to(torch.float32) 
+                # last_stage = torch.zeros(last_stage.shape, device = last_stage.device).to(torch.float32)  
+                # last_stage[:, mask_minus, :] = last_stage_gather
+                last_stage = last_stage_gather
                 if (cfg != 1) and add_cfg_on_logits:
                     logits_BlV = self.get_logits(last_stage, cond_BD).mul(1/tau_list[si])
                     logits_BlV = cfg * logits_BlV[:B] + (1-cfg) * logits_BlV[B:]
@@ -948,17 +959,29 @@ class Infinity(nn.Module):
                         idx_Bld = gt_ls_Bl[si]
                     else:
                         assert pn[0] == 1
-                        idx_Bld = idx_Bld.reshape(B, pn[1], pn[2], -1)
+                        #######  remove #####
+                        # idx_Bld = idx_Bld.reshape(B, pn[1], pn[2], -1)
                         if self.apply_spatial_patchify:
                             idx_Bld = idx_Bld.permute(0,3,1,2)
                             idx_Bld = torch.nn.functional.pixel_shuffle(idx_Bld, 2)
                             idx_Bld = idx_Bld.permute(0,2,3,1)
-                        idx_Bld = idx_Bld.unsqueeze(1)
+                        idx_Bld = idx_Bld.unsqueeze(1)  #[1,1,48*48*0.05,32]
 
                     idx_Bld_list.append(idx_Bld)
-                    codes = vae.quantizer.lfq.indices_to_codes(idx_Bld, label_type='bit_label') 
+
+                    # ##################  1.2 ##########################
+                    # idx_Bld_ = torch.zeros([B,1,pn[1]*pn[2],32], device = idx_Bld.device,dtype=idx_Bld.dtype)
+                    # idx_Bld_[:,:, mask_minus,:] = idx_Bld
+                    # idx_Bld = idx_Bld_.reshape(B, 1, pn[1], pn[2],32) # [B, d, 1, h, w] or [B, d, 2h, 2w]
+                    # ##################  1.2 ##########################
+                    codes = vae.quantizer.lfq.indices_to_codes(idx_Bld, label_type='bit_label')  ##[1,1,48*48*0.05,32] -->[1,32,1,48*48*0.05]
                 ######################### 1 #############################
 
+                ################## padding 1.1 ##########################
+                codes_ = torch.zeros([B,32,1,pn[1]*pn[2]], device = codes.device,dtype=codes.dtype)
+                codes_[:,:,:, mask_minus] = codes
+                codes = codes_.reshape(B, 32, 1, pn[1], pn[2]) # [B, d, 1, h, w] or [B, d, 2h, 2w]
+                ################## padding 1.1 ##########################
                 if si != num_stages_minus_1:
                     test_partial_code = F.interpolate(codes, size=vae_scale_schedule[-1], mode=vae.quantizer.z_interplote_up)
                     test_partial_list.append(test_partial_code)                    
@@ -973,7 +996,7 @@ class Infinity(nn.Module):
             'summed_codes_para': summed_codes_para
         }
         if save_para_codes:
-            with open(f'outputs/codes_mtp/test_para10_combined_data_{category}.pkl', 'wb') as f:
+            with open(f'outputs/codes_mtp/test_combined_data_{category}_50_5_5.pkl', 'wb') as f:
                 pickle.dump(combined_data, f)
 
 
