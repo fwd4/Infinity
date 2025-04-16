@@ -315,7 +315,7 @@ class SelfAttention(nn.Module):
             q, k = apply_rotary_emb(q, k, mask_id, scale_schedule, rope2d_freqs_grid, self.pad_to_multiplier, self.rope2d_normalized_by_hw, scale_ind, self.using_flash) #, freqs_cis=freqs_cis)
             #q_, k_ = apply_rotary_emb(q_, k_, scale_schedule, rope2d_freqs_grid, self.pad_to_multiplier, self.rope2d_normalized_by_hw, scale_ind, 1) #, freqs_cis=freqs_cis)
         if self.caching:    # kv caching: only used during inference
-            if si <= 9 :
+            if si <= 9 :   #9
                 if self.cached_k is None: 
                     self.cached_k = k; self.cached_v = v
                     #self.cached_k_ = k_; self.cached_v_ = v_

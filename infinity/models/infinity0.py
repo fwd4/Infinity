@@ -703,15 +703,17 @@ class Infinity(nn.Module):
         save_para_codes = False
         with open('skip_list.pkl', 'rb') as f:
             skip_list = pickle.load(f)
-        profile = False
+        profile = True
 
         # 用于存储每个scale的codes和summed_codes
         codes_data = {si: [] for si in range(len(scale_schedule))}
         summed_codes_data = {si: [] for si in range(len(scale_schedule))}
         partial_codes_data = {si: [] for si in range(len(scale_schedule))}
+        mask_minus = None
 
         for si, pn in enumerate(scale_schedule):   # si: i-th segment
             if profile:
+                torch.cuda.synchronize()
                 t0 = time.time() * 1e3
             import os
             # pdf_filename = os.path.join('/home/xujiaming/xujiaming/train_machine/lyx/Infinity/outputs/profile', f'heatmap_scale_{si}.pdf')  
@@ -732,6 +734,7 @@ class Infinity(nn.Module):
                 attn_fn = self.attn_fn_compile_dict.get(tuple(scale_schedule[:(si+1)]), None)
 
             if profile:
+                torch.cuda.synchronize()
                 t1 = time.time() * 1e3
             # assert self.attn_bias_for_masking[:, :, last_L:cur_L, :cur_L].sum() == 0, f'AR with {(self.attn_bias_for_masking[:, :, last_L:cur_L, :cur_L] != 0).sum()} / {self.attn_bias_for_masking[:, :, last_L:cur_L, :cur_L].numel()} mask item'
             layer_idx = 0
@@ -763,7 +766,7 @@ class Infinity(nn.Module):
                     current_stage = last_stage.clone()  
                     # torch.cuda.synchronize()
                     # tt = time.time()
-                    last_stage = m(x=last_stage, cond_BD=cond_BD_or_gss, ca_kv=ca_kv, attn_bias_or_two_vector=None, attn_fn=attn_fn, scale_schedule=scale_schedule, rope2d_freqs_grid=self.rope2d_freqs_grid, scale_ind=si)
+                    last_stage = m(x=last_stage, si = si, mask_id = mask_minus, cond_BD=cond_BD_or_gss, ca_kv=ca_kv, attn_bias_or_two_vector=None, attn_fn=attn_fn, scale_schedule=scale_schedule, rope2d_freqs_grid=self.rope2d_freqs_grid, scale_ind=si)
                     partial_codes_data[si].append(last_stage)
                     # torch.cuda.synchronize()
                     # ttt = time.time()
@@ -802,6 +805,7 @@ class Infinity(nn.Module):
             # pdf.close()  
             # backbone_time.append(layer_time)
             if profile:
+                torch.cuda.synchronize()
                 t2 = time.time() * 1e3
             
             if (cfg != 1) and add_cfg_on_logits:
@@ -867,6 +871,7 @@ class Infinity(nn.Module):
                 last_stage = last_stage.repeat(bs//B, 1, 1)
 
             if profile:
+                torch.cuda.synchronize()
                 t3 = time.time() * 1e3
                 print(f"stage {si}, {pn}, all {t3 - t0:.2f}ms, {t1 - t0:.2f}ms, 32block {t2 - t1:.2f}ms, {t3 - t2:.2f}ms")
         #     #get_torch_mem_usage()
