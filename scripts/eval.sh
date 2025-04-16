@@ -105,7 +105,10 @@ test_gen_eval() {
     --apply_spatial_patchify ${apply_spatial_patchify} \
     --cfg_insertion_layer ${cfg_insertion_layer} \
     --outdir ${out_dir}/images \
-    --rewrite_prompt ${rewrite_prompt}
+    --rewrite_prompt ${rewrite_prompt}\
+    --si_para ${si_para}\
+    --ratio_list ${ratio_list}\
+    --kv_opt ${kv_opt}
 
     # detect objects
     ${python_ext} evaluation/gen_eval/evaluate_images.py ${out_dir}/images \
@@ -208,6 +211,9 @@ apply_spatial_patchify=0
 cfg_insertion_layer=0
 sub_fix=cfg${cfg}_tau${tau}_cfg_insertion_layer${cfg_insertion_layer}
 use_flex_attn=0
+si_para=8
+ratio_list='[50,30,15,5]'
+kv_opt=0
 prefix=1497
 
 
@@ -234,7 +240,7 @@ case $task in
         ;;
     gen_eval)
         rewrite_prompt=2
-        out_dir="${out_dir_root}/gen_eval_${sub_fix}_rewrite_prompt${rewrite_prompt}_flex_attn${use_flex_attn}_round2_real_rewrite_prefix${prefix}"
+        out_dir="${out_dir_root}/gen_eval_${sub_fix}_rewrite_prompt${rewrite_prompt}_flex_attn${use_flex_attn}_round2_real_rewrite_prefix${prefix}_si_para${si_para}-ratio_list${ratio_list}-kv_opt${kv_opt}"
         test_gen_eval
         break
         ;;

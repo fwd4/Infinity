@@ -35,6 +35,14 @@ if __name__ == '__main__':
     parser.add_argument('--load_rewrite_prompt_cache', type=int, default=1, choices=[0,1])
     args = parser.parse_args()
 
+    # 将字符串转换为列表  
+    if args.ratio_list:  
+        try:  
+            ratio_list = ast.literal_eval(args.ratio_list)  
+        except (ValueError, SyntaxError):  
+            print("Error: Invalid format for ratio_list")  
+            ratio_list = []  # 设置默认值 
+
     # parse cfg
     args.cfg = list(map(float, args.cfg.split(',')))
     if len(args.cfg) == 1:
@@ -126,7 +134,8 @@ if __name__ == '__main__':
                 scale_schedule = dynamic_resolution_h_w[h_div_w_template][args.pn]['scales']
                 scale_schedule = [(1, h, w) for (_, h, w) in scale_schedule]
                 tgt_h, tgt_w = dynamic_resolution_h_w[h_div_w_template][args.pn]['pixel']
-                image = gen_one_img(infinity, vae, text_tokenizer, text_encoder, prompt, tau_list=tau, cfg_sc=3, cfg_list=cfg, scale_schedule=scale_schedule, cfg_insertion_layer=[args.cfg_insertion_layer], vae_type=args.vae_type)
+                image = gen_one_img(infinity, vae, text_tokenizer, text_encoder, prompt, tau_list=tau, cfg_sc=3, cfg_list=cfg, scale_schedule=scale_schedule, cfg_insertion_layer=[args.cfg_insertion_layer], 
+                                    vae_type=args.vae_type, si_para = args.si_para, ratio_list = ratio_list, kv_opt = args.kv_opt)
             else:
                 raise ValueError
             t2 = time.time()
