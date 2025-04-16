@@ -30,7 +30,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns  
 from matplotlib.backends.backend_pdf import PdfPages  
 
-def get_freq_old(codes, pn, ratio1):  
+def get_freq(codes, pn, ratio1):  
     flatten_sum = codes.reshape(-1, pn, pn)  
     dc_component = F.avg_pool2d(flatten_sum, pn)  
     dc_diff = torch.norm(flatten_sum - dc_component, dim=0).flatten()  
@@ -60,85 +60,6 @@ def get_freq_old(codes, pn, ratio1):
     
     # 返回所有mask张量，顺序是从小比例到大比例差：top5, top10-top5, top30-top10, top50-top30  
     return tuple(masks)  
-
-def get_freq(codes_list, pn_list, ratio_list):
-    """
-    计算每个 last_stage_list 中的 top 比例索引，并返回对应的 mask_list。
-
-    参数:
-        codes_list: List[Tensor], 每个 Tensor 的形状为 [B, d, h, w]
-        pn_list: List[int], 每个对应的分辨率 pn
-        ratio_list: List[int], 每个对应的比例，例如 [50, 30, 10, 5]
-
-    返回:
-        mask_list: List[Tensor], 每个 Tensor 包含对应比例的索引
-    """
-    assert len(codes_list) == len(pn_list) == len(ratio_list), "codes_list, pn_list 和 ratio_list 的长度必须相同"
-
-    mask_list = []  # 用于存储每个比例的 mask
-    device = codes_list[0].device  # 假设所有张量都在同一个设备上
-
-    for codes, pn, ratio in zip(codes_list, pn_list, ratio_list):
-        # 将 codes 重塑为 [-1, pn, pn]
-        flatten_sum = codes.reshape(-1, pn, pn)
-
-        # 计算 DC 分量
-        dc_component = F.avg_pool2d(flatten_sum, pn)  
-        # 计算差异并展平
-        dc_diff = torch.norm(flatten_sum - dc_component, dim=0).flatten()
-        # 获取总元素数量
-        total_sz = dc_diff.numel()
-
-        # 计算当前比例的 top 索引范围
-        high_ratio = ratio
-        low_ratio = ratio_list[ratio_list.index(ratio) + 1] if ratio_list.index(ratio) + 1 < len(ratio_list) else 0
-
-        # 获取 top_high 和 top_low 的索引
-        top_high_indices = torch.topk(dc_diff, total_sz * high_ratio // 100, largest=True, sorted=False).indices
-        top_low_indices = torch.topk(dc_diff, total_sz * low_ratio // 100, largest=True, sorted=False).indices
-
-        # 计算 mask（高比例减去低比例）
-        mask_set = set(top_high_indices.cpu().numpy()) - set(top_low_indices.cpu().numpy())
-        # mask = torch.tensor(list(mask_set), dtype=torch.long, device=device)
-        mask = list(mask_set)
-
-        # 将 mask 添加到 mask_list
-        mask_list.append(mask)
-
-    return mask_list
-
-def process_and_concat_last_stage(last_stage_list, mask_list):
-    """
-    处理 last_stage_list 中的每个张量，按照指定步骤操作，并拼接成一个新的张量。
-
-    参数:
-        last_stage_list: List[Tensor], 每个张量的形状为 [B, d, 1, h, w]
-        mask_list: List[Tensor], 每个张量包含对应的索引
-
-    返回:
-        new_last_stage: Tensor, 拼接后的新张量，形状为 [B, total_mask_len, d]
-    """
-    processed_list = []  # 用于存储处理后的张量
-
-    for last_stage, mask in zip(last_stage_list, mask_list):
-        # 1. squeeze(-3) -> [B, d, h, w]
-        last_stage = last_stage.squeeze(-3)
-
-        # 2. reshape -> [B, d, h*w]
-        B, d, h, w = last_stage.shape
-        last_stage = last_stage.reshape(B, d, h * w)
-
-        # 3. 根据 mask 取对应的索引 -> [B, d, mask_len]
-        last_stage = last_stage[:, :, mask]
-
-        # 4. 转置为 [B, mask_len, d] 并添加到列表
-        last_stage = last_stage.permute(0, 2, 1)  # [B, mask_len, d]
-        processed_list.append(last_stage)
-
-    # 5. 拼接所有处理后的张量 -> [B, total_mask_len, d]
-    new_last_stage = torch.cat(processed_list, dim=1)
-
-    return new_last_stage
 
 # def get_freq(codes,pn):
 #     flatten_sum = codes.reshape(-1, pn, pn)
@@ -614,27 +535,14 @@ class Infinity(nn.Module):
         with torch.amp.autocast('cuda', enabled=False):
             return self.head(self.head_nm(h.float(), cond_BD.float()))
 
-    def add_lvl_embeding(self, feature, mask_list, scale_ind, scale_schedule, need_to_pad=0):
+    def add_lvl_embeding(self, feature, scale_ind, scale_schedule, need_to_pad=0):
         bs, seq_len, c = feature.shape
-        if mask_list is not None:
-            # 假设 mask_list 和 scale_ind 长度相同  
-            start_idx = 0  
-            for i, mask in enumerate(mask_list):  
-                segment_length = len(mask)  
-                end_idx = start_idx + segment_length  
-                
-                # 对 feature 的当前分段应用对应的 scale_ind 值  
-                feature[:, start_idx:end_idx] += self.lvl_embed(  
-                    scale_ind[i] * torch.ones((bs, segment_length), dtype=torch.int).to(feature.device)  
-                )  
-                
-                start_idx = end_idx  
-        
-            return feature
-        else:
-            t_mul_h_mul_w = seq_len
-            feature[:, :t_mul_h_mul_w] += self.lvl_embed(scale_ind*torch.ones((bs, t_mul_h_mul_w),dtype=torch.int).to(feature.device))
-            return feature
+        patch_t, patch_h, patch_w = scale_schedule[scale_ind]
+        t_mul_h_mul_w = seq_len
+        # t_mul_h_mul_w = patch_t * patch_h * patch_w
+        # assert t_mul_h_mul_w + need_to_pad == seq_len
+        feature[:, :t_mul_h_mul_w] += self.lvl_embed(scale_ind*torch.ones((bs, t_mul_h_mul_w),dtype=torch.int).to(feature.device))
+        return feature
     
     def add_lvl_embeding_for_x_BLC(self, x_BLC, scale_schedule, need_to_pad=0):
         ptr = 0
@@ -757,9 +665,6 @@ class Infinity(nn.Module):
         save_img_path=None,
         sampling_per_bits=1,
         verbose=False,
-        si_para = 9,
-        ratio_list = [50,10,5],
-        kv_opt=None
     ):   # returns List[idx_Bl]
         # tt0 = time.time() * 1e3
 
@@ -853,13 +758,13 @@ class Infinity(nn.Module):
         profile = True
 
         # 用于存储每个scale的codes和summed_codes
-        # si_para = 9
+        si_para = 9
         codes_data = {si: [] for si in range(len(scale_schedule))}
         summed_codes_data = {si: [] for si in range(len(scale_schedule))}
         partial_codes_data = {si: [] for si in range(len(scale_schedule))}
         test_partial_list = []
         test_partial_list0 = []  
-        mask_list = None
+        mask_minus = None
 
         for si, pn in enumerate(scale_schedule):   # si: i-th segment
             # if si>=11:
@@ -886,16 +791,16 @@ class Infinity(nn.Module):
                 layer_idx = 0    
                 for block_idx, b in enumerate(self.block_chunks):
                     if self.add_lvl_embeding_only_first_block and block_idx == 0:
-                        last_stage = self.add_lvl_embeding(last_stage, mask_list, si, scale_schedule, need_to_pad=need_to_pad)
+                        last_stage = self.add_lvl_embeding(last_stage, si, scale_schedule, need_to_pad=need_to_pad)
                         partial_codes_data[si].append(last_stage)
                     if not self.add_lvl_embeding_only_first_block: 
-                        last_stage = self.add_lvl_embeding(last_stage, mask_list,si, scale_schedule, need_to_pad=need_to_pad)
+                        last_stage = self.add_lvl_embeding(last_stage, si, scale_schedule, need_to_pad=need_to_pad)
                         partial_codes_data[si].append(last_stage)
 
                     for ii, m in enumerate(b.module):
                         block_number = block_idx * 4 + ii
                         current_stage = last_stage.clone()
-                        last_stage = m(x=last_stage, mask_id = mask_list, cond_BD=cond_BD_or_gss, ca_kv=ca_kv, attn_bias_or_two_vector=None, attn_fn=attn_fn, scale_schedule=scale_schedule, rope2d_freqs_grid=self.rope2d_freqs_grid, scale_ind=si, si_para=si_para, kv_opt=kv_opt)
+                        last_stage = m(x=last_stage, si = si, mask_id = mask_minus, cond_BD=cond_BD_or_gss, ca_kv=ca_kv, attn_bias_or_two_vector=None, attn_fn=attn_fn, scale_schedule=scale_schedule, rope2d_freqs_grid=self.rope2d_freqs_grid, scale_ind=si)
                         partial_codes_data[si].append(last_stage)
 
                         if compute_loss:
@@ -955,6 +860,7 @@ class Infinity(nn.Module):
                     codes = vae.quantizer.lfq.indices_to_codes(idx_Bld, label_type='bit_label') 
                 ######################### 1 #############################
                 
+                
                 if si != num_stages_minus_1:
                     summed_codes += F.interpolate(codes, size=vae_scale_schedule[-1], mode=vae.quantizer.z_interplote_up)
                     if si == si_para:
@@ -971,13 +877,11 @@ class Infinity(nn.Module):
                     last_stage = torch.permute(last_stage, [0,2,1]) # [B, h*w, d] or [B, h*w, 4d]
                 else:
                     summed_codes += codes
-                    if si == si_para:
-                        summed_codes_para = summed_codes.clone()  # Save summed_codes for stage 8
-                        continue
-
                     ######################### 2.1 #############################
 
                 ######################### 2.2 #############################            
+                codes_data[si].append(codes.cpu().numpy())
+                summed_codes_data[si].append(summed_codes.cpu().numpy())
 
                 if si != num_stages_minus_1:
                     last_stage = self.word_embed(self.norm0_ve(last_stage))
@@ -990,46 +894,67 @@ class Infinity(nn.Module):
                     print(f"stage {si}, {pn}, all {t3 - t0:.2f}ms, {t1 - t0:.2f}ms, 32block {t2 - t1:.2f}ms, {t3 - t2:.2f}ms")
 
             if si > si_para:
-                assert len(ratio_list) == num_stages_minus_1 - si_para
-              
+                ratio = [50,30,10,5]
+                assert len(ratio) == num_stages_minus_1-si_para
+                _,_,mask_minus = get_freq(last_stage,pn[1],ratio)                    
                 if profile:
                     torch.cuda.synchronize()
                     t0 = time.time() * 1e3
-                last_stage_list = []
-                pn_list = []
-                scale_list = [i for i in range(si_para+1, num_stages_minus_1+1)]
-                for i in range(si,num_stages_minus_1+1,1):
-                    last_stage = F.interpolate(summed_codes_para, size=vae_scale_schedule[i], mode=vae.quantizer.z_interplote_up) # [B, d, 1, h, w] or [B, d, 1, 2h, 2w]
-                    last_stage_list.append(last_stage)
-                    pn_list.append(scale_schedule[i][1])
-                
-                mask_list = get_freq(last_stage_list,pn_list,ratio_list)                 
-                com_last_stage = process_and_concat_last_stage(last_stage_list, mask_list)   #[B,com_pruned_seq_len,d] #[1,com_pruned_seq_len,32]
+                last_stage = F.interpolate(summed_codes_para, size=vae_scale_schedule[si], mode=vae.quantizer.z_interplote_up) # [B, d, 1, h, w] or [B, d, 1, 2h, 2w]
+                if si == 10:
+                    _,_,mask_minus = get_freq(last_stage,pn[1])                    
+                    ######################### 2.1 #############################    
+                    last_stage = last_stage.squeeze(-3) # [B, d, h, w] or [B, d, 2h, 2w]
+                    if self.apply_spatial_patchify: # patchify operation
+                        last_stage = torch.nn.functional.pixel_unshuffle(last_stage, 2) # [B, 4d, h, w]
+                    last_stage = last_stage.reshape(*last_stage.shape[:2], -1) # [B, d, h*w] or [B, 4d, h*w]
+                    last_stage = torch.permute(last_stage, [0,2,1]) # [B, h*w, d] or [B, h*w, 4d]
+                    ######################### 2.1 #############################
+
+                if si == 11:
+                    _,mask_minus,_ = get_freq(last_stage,pn[1])                    
+                    ######################### 2.1 #############################    
+                    last_stage = last_stage.squeeze(-3) # [B, d, h, w] or [B, d, 2h, 2w]
+                    if self.apply_spatial_patchify: # patchify operation
+                        last_stage = torch.nn.functional.pixel_unshuffle(last_stage, 2) # [B, 4d, h, w]
+                    last_stage = last_stage.reshape(*last_stage.shape[:2], -1) # [B, d, h*w] or [B, 4d, h*w]
+                    last_stage = torch.permute(last_stage, [0,2,1]) # [B, h*w, d] or [B, h*w, 4d]
+                    ######################### 2.1 #############################
+
+                if si == 12:
+                    mask_minus,_,_ = get_freq(last_stage,pn[1])                    
+                    ######################### 2.1 #############################    
+                    last_stage = last_stage.squeeze(-3) # [B, d, h, w] or [B, d, 2h, 2w]
+                    if self.apply_spatial_patchify: # patchify operation
+                        last_stage = torch.nn.functional.pixel_unshuffle(last_stage, 2) # [B, 4d, h, w]
+                    last_stage = last_stage.reshape(*last_stage.shape[:2], -1) # [B, d, h*w] or [B, 4d, h*w]
+                    last_stage = torch.permute(last_stage, [0,2,1]) # [B, h*w, d] or [B, h*w, 4d]
+                    ######################### 2.1 #############################
 
                 ######################### 2.2 #############################            
-                com_last_stage = self.word_embed(self.norm0_ve(com_last_stage))
-                com_last_stage = com_last_stage.repeat(bs//B, 1, 1)
+                codes_data[si].append(codes.cpu().numpy())
+                summed_codes_data[si].append(summed_codes.cpu().numpy())
+                last_stage = self.word_embed(self.norm0_ve(last_stage))
+                last_stage = last_stage.repeat(bs//B, 1, 1)
+                last_stage_gather = last_stage[:, mask_minus, :]
                 ######################### 2.2 #############################
                 layer_idx = 0
                 if profile:
                     torch.cuda.synchronize()
                     t1 = time.time() * 1e3
-                
-
                 for block_idx, b in enumerate(self.block_chunks):
                     if self.add_lvl_embeding_only_first_block and block_idx == 0:
-                        com_last_stage = self.add_lvl_embeding(com_last_stage, mask_list, scale_list, scale_schedule, need_to_pad=need_to_pad)
-                        partial_codes_data[si].append(com_last_stage)
+                        last_stage_gather = self.add_lvl_embeding(last_stage_gather, si, scale_schedule, need_to_pad=need_to_pad)
+                        partial_codes_data[si].append(last_stage_gather)
                     if not self.add_lvl_embeding_only_first_block: 
-                        com_last_stage = self.add_lvl_embeding(com_last_stage, mask_list, scale_list,scale_schedule, need_to_pad=need_to_pad)
-                        partial_codes_data[si].append(com_last_stage)
+                        last_stage_gather = self.add_lvl_embeding(last_stage_gather, si, scale_schedule, need_to_pad=need_to_pad)
+                        partial_codes_data[si].append(last_stage_gather)
 
                     for ii, m in enumerate(b.module):
                         block_number = block_idx * 4 + ii
-                        current_stage = com_last_stage.clone()
-                        com_last_stage = m(x=com_last_stage, mask_id = mask_list, cond_BD=cond_BD_or_gss, ca_kv=ca_kv, attn_bias_or_two_vector=None, attn_fn=attn_fn, scale_schedule=scale_schedule,
-                                               rope2d_freqs_grid=self.rope2d_freqs_grid, scale_ind = scale_list, si_para=si_para, kv_opt=kv_opt)
-                        partial_codes_data[si].append(com_last_stage)
+                        current_stage = last_stage_gather.clone()
+                        last_stage_gather = m(x=last_stage_gather, si = si, mask_id = mask_minus, cond_BD=cond_BD_or_gss, ca_kv=ca_kv, attn_bias_or_two_vector=None, attn_fn=attn_fn, scale_schedule=scale_schedule, rope2d_freqs_grid=self.rope2d_freqs_grid, scale_ind=si)
+                        partial_codes_data[si].append(last_stage_gather)
 
                         if compute_loss:
                             if loss_func == 'MSE':                    
@@ -1058,7 +983,10 @@ class Infinity(nn.Module):
                     torch.cuda.synchronize()
                     t2 = time.time() * 1e3
                 ######################### 1 #############################
-                last_stage = com_last_stage 
+                # last_stage = last_stage.to(torch.float32) 
+                # last_stage = torch.zeros(last_stage.shape, device = last_stage.device).to(torch.float32)  
+                # last_stage[:, mask_minus, :] = last_stage_gather
+                last_stage = last_stage_gather
                 if (cfg != 1) and add_cfg_on_logits:
                     logits_BlV = self.get_logits(last_stage, cond_BD).mul(1/tau_list[si])
                     logits_BlV = cfg * logits_BlV[:B] + (1-cfg) * logits_BlV[B:]
@@ -1087,33 +1015,33 @@ class Infinity(nn.Module):
                         idx_Bld = idx_Bld.unsqueeze(1)  #[1,1,48*48*0.05,32]
 
                     idx_Bld_list.append(idx_Bld)
+
+                    # ##################  1.2 ##########################
+                    # idx_Bld_ = torch.zeros([B,1,pn[1]*pn[2],32], device = idx_Bld.device,dtype=idx_Bld.dtype)
+                    # idx_Bld_[:,:, mask_minus,:] = idx_Bld
+                    # idx_Bld = idx_Bld_.reshape(B, 1, pn[1], pn[2],32) # [B, d, 1, h, w] or [B, d, 2h, 2w]
+                    # ##################  1.2 ##########################
                     codes = vae.quantizer.lfq.indices_to_codes(idx_Bld, label_type='bit_label')  ##[1,1,48*48*0.05,32] -->[1,32,1,48*48*0.05]
                 ######################### 1 #############################
 
                 ################## padding 1.1 ##########################
-                codes_list = []
-                for i in range(len(pn_list)):
-                    codes_ = torch.zeros([B,32,1,pn_list[i]**2], device = codes.device,dtype=codes.dtype)
-                    codes_list.append(codes_)
-                start_id = 0
-                for idx, (new_codes, mask) in enumerate(zip(codes_list, mask_list)):  
-                    # 将 codes 重塑为 [-1, pn, pn]  
-                    new_codes[:, :, :, mask] = codes[:, :, :, start_id:start_id + len(mask)]  
-                    new_codes = new_codes.reshape(B, 32, 1, pn_list[idx],pn_list[idx])
-                    # 检查是否是最后一轮循环  
-                    if idx < len(codes_list) - 1:  # 不处理最后一轮  
-                        test_partial_code = F.interpolate(new_codes, size=vae_scale_schedule[-1], mode=vae.quantizer.z_interplote_up)  
-                        test_partial_list.append(test_partial_code)  
-                    else:
-                        test_partial_list.append(new_codes)
-                    start_id += len(mask)  
-
+                codes_ = torch.zeros([B,32,1,pn[1]*pn[2]], device = codes.device,dtype=codes.dtype)
+                codes_[:,:,:, mask_minus] = codes
+                codes = codes_.reshape(B, 32, 1, pn[1], pn[2]) # [B, d, 1, h, w] or [B, d, 2h, 2w]
+                ################## padding 1.1 ##########################
+                if si != num_stages_minus_1:
+                    test_partial_code = F.interpolate(codes, size=vae_scale_schedule[-1], mode=vae.quantizer.z_interplote_up)
+                    test_partial_list.append(test_partial_code)                    
+                    # summed_codes_5 += test_partial_code
+                else:
+                    # summed_codes_5 += codes
+                    test_partial_list.append(codes)
+    
                 if profile:
                     torch.cuda.synchronize()
                     t3 = time.time() * 1e3
                     print(f"stage {si}, {pn}, all {t3 - t0:.2f}ms, {t1 - t0:.2f}ms, 32block {t2 - t1:.2f}ms, {t3 - t2:.2f}ms")
 
-                break   
         # Save the data to pkl files
         combined_data = {
             'test_partial_list': test_partial_list,
@@ -1124,16 +1052,16 @@ class Infinity(nn.Module):
                 pickle.dump(combined_data, f)
 
 
-        # # 将 codes_data 和 summed_codes_data 合并到一个字典中
-        # combined_data = {
-        #     'partial_codes_data': partial_codes_data,
-        #     'codes_data': codes_data,
-        #     'summed_codes_data': summed_codes_data
-        # }
-        # if save_codes:
-        #     # 保存 combined_data 到 pkl 文件
-        #     with open(f'outputs/codes/test_pixel_partialblock_data_{category}.pkl', 'wb') as f:
-        #         pickle.dump(partial_codes_data, f)
+        # 将 codes_data 和 summed_codes_data 合并到一个字典中
+        combined_data = {
+            'partial_codes_data': partial_codes_data,
+            'codes_data': codes_data,
+            'summed_codes_data': summed_codes_data
+        }
+        if save_codes:
+            # 保存 combined_data 到 pkl 文件
+            with open(f'outputs/codes/test_pixel_partialblock_data_{category}.pkl', 'wb') as f:
+                pickle.dump(partial_codes_data, f)
         
         # 保存 loss_data 到 pkl 文件
         if compute_loss:
@@ -1152,7 +1080,7 @@ class Infinity(nn.Module):
             return ret, idx_Bl_list, []
         
         if vae_type != 0:
-            summed_codes = sum(test_partial_list) + summed_codes_para
+            summed_codes = sum(test_partial_list)+summed_codes_para
             img = vae.decode(summed_codes.squeeze(-3))
         else:
             img = vae.viz_from_ms_h_BChw(ret, scale_schedule=scale_schedule, same_shape=True, last_one=True)

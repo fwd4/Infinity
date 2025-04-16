@@ -98,7 +98,7 @@ def precompute_rope2d_freqs_grid(dim, dynamic_resolution_h_w, rope2d_normalized_
 
 def apply_rotary_emb(q, k, mask_id, scale_schedule, rope2d_freqs_grid, pad_to_multiplier, rope2d_normalized_by_hw, scale_ind, using_flash=False):
     if using_flash:
-        q = q.transpose(1, 2)
+        q = q.transpose(1, 2)   #(B:batch_size, L:seq_len, H:heads, c:head_dim) --> (B,H,L,C)
         k = k.transpose(1, 2)
     qk = torch.stack((q, k), dim=0)  #(2, batch_size, heads, seq_len, head_dim)
     device_type = qk.device.type
@@ -106,17 +106,25 @@ def apply_rotary_emb(q, k, mask_id, scale_schedule, rope2d_freqs_grid, pad_to_mu
     with torch.autocast(device_type=device_type, enabled=False):
         seq_len = qk.shape[3]
         start = 0
-        if scale_ind >= 1:
-            assert len(scale_schedule[0]) == 3
-            start = np.sum([item[0] * item[1] * item[2] for item in scale_schedule[:scale_ind]])
+        if isinstance(scale_ind, list):
+            start_list = [np.sum([item[0] * item[1] * item[2] for item in scale_schedule[:ind]]) for ind in scale_ind]
+        else:
+            if scale_ind >= 1:
+                assert len(scale_schedule[0]) == 3
+                start = np.sum([item[0] * item[1] * item[2] for item in scale_schedule[:scale_ind]])
 
         rope2d_freqs_grid[str(tuple(scale_schedule))] = rope2d_freqs_grid[str(tuple(scale_schedule))].to(qk.device)
         
-        assert start+seq_len <= rope2d_freqs_grid[str(tuple(scale_schedule))].shape[4]  
+        # assert start+seq_len <= rope2d_freqs_grid[str(tuple(scale_schedule))].shape[4]  
         if mask_id ==  None:
             rope_cache = rope2d_freqs_grid[str(tuple(scale_schedule))][:, :, :, :, start:start+seq_len]
         else:
-            rope_cache = rope2d_freqs_grid[str(tuple(scale_schedule))][:, :, :, :, start+mask_id] #start:start+seq_len # rope_cache shape: [2, 1, 1, 1, seq_len, half_head_dim]
+            # rope_cache = rope2d_freqs_grid[str(tuple(scale_schedule))][:, :, :, :, start+mask_id] #start:start+seq_len # rope_cache shape: [2, 1, 1, 1, seq_len, half_head_dim]
+            rope_cache_list = []
+            for i in range(len(mask_id)):
+                rope_cache = rope2d_freqs_grid[str(tuple(scale_schedule))][:, :, :, :, start_list[i] + mask_id[i]]
+                rope_cache_list.append(rope_cache)
+            rope_cache = torch.cat(rope_cache_list, dim=4)  # Concatenate along the sequence length dimension
         qk = qk.reshape(*qk.shape[:-1], -1, 2) #(2, batch_size, heads, seq_len, half_head_dim, 2)
         qk = torch.stack([
             rope_cache[0] * qk[...,0] - rope_cache[1] * qk[...,1],
@@ -259,7 +267,8 @@ class SelfAttention(nn.Module):
         self.cached_v = None
     
     # NOTE: attn_bias_or_two_vector is None during inference
-    def forward(self, x, si,mask_id, attn_bias_or_two_vector: Union[torch.Tensor, Tuple[torch.IntTensor, torch.IntTensor]], attn_fn=None, scale_schedule=None, rope2d_freqs_grid=None, scale_ind=0):
+    def forward(self, x, mask_id, attn_bias_or_two_vector: Union[torch.Tensor, Tuple[torch.IntTensor, torch.IntTensor]], 
+                attn_fn=None, scale_schedule=None, rope2d_freqs_grid=None, scale_ind=0 ,si_para=0 ,kv_opt=None):
         """
         :param (fp32) x: shaped (B or batch_size, L or seq_length, C or hidden_dim); if seq-parallel is used, the `L` dim would be shared
         :param (fp32) attn_bias_or_two_vector:
@@ -300,7 +309,7 @@ class SelfAttention(nn.Module):
             scale_mul = self.scale_mul_1H11.clamp_max(self.max_scale_mul).exp() # 11H1 (flash), or 1H11 (not flash)
             if self.using_flash:
                 scale_mul = scale_mul.view(1, 1, self.num_heads, 1)
-            q = F.normalize(q, dim=-1, eps=1e-12).mul(scale_mul).contiguous()   # fp32
+            q = F.normalize(q, dim=-1, eps=1e-12).mul(scale_mul).contiguous()   # fp32  (B:batch_size, L:seq_len, H:heads, c:head_dim)
             #q_ = F.normalize(q_, dim=-1, eps=1e-12).mul(scale_mul.view(1,1, self.num_heads, 1)).contiguous()   # fp32
             k = F.normalize(k, dim=-1, eps=1e-12).contiguous()                  # fp32
             #k_ = F.normalize(k_, dim=-1, eps=1e-12).contiguous()                  # fp32
@@ -315,17 +324,33 @@ class SelfAttention(nn.Module):
             q, k = apply_rotary_emb(q, k, mask_id, scale_schedule, rope2d_freqs_grid, self.pad_to_multiplier, self.rope2d_normalized_by_hw, scale_ind, self.using_flash) #, freqs_cis=freqs_cis)
             #q_, k_ = apply_rotary_emb(q_, k_, scale_schedule, rope2d_freqs_grid, self.pad_to_multiplier, self.rope2d_normalized_by_hw, scale_ind, 1) #, freqs_cis=freqs_cis)
         if self.caching:    # kv caching: only used during inference
-            if si <= 9 :   #9
-                if self.cached_k is None: 
-                    self.cached_k = k; self.cached_v = v
-                    #self.cached_k_ = k_; self.cached_v_ = v_
-                else: 
-                    k = self.cached_k = torch.cat((self.cached_k, k), dim=L_dim); v = self.cached_v = torch.cat((self.cached_v, v), dim=L_dim)
-                    #k_ = self.cached_k_ = torch.cat((self.cached_k_, k_), dim=1); v_ = self.cached_v_ = torch.cat((self.cached_v_, v_), dim=1)
+            if not isinstance(scale_ind, list):
+                if kv_opt !=  None:
+                    if scale_ind <= kv_opt : 
+                        if self.cached_k is None: 
+                            self.cached_k = k; self.cached_v = v
+                            #self.cached_k_ = k_; self.cached_v_ = v_
+                        else: 
+                            k = self.cached_k = torch.cat((self.cached_k, k), dim=L_dim); v = self.cached_v = torch.cat((self.cached_v, v), dim=L_dim)
+                    else:
+                        k = torch.cat((self.cached_k, k), dim=L_dim)
+                        v = torch.cat((self.cached_v, v), dim=L_dim)                
+                else:
+                    if scale_ind <= si_para :   #9
+                        if self.cached_k is None: 
+                            self.cached_k = k; self.cached_v = v
+                            #self.cached_k_ = k_; self.cached_v_ = v_
+                        else: 
+                            k = self.cached_k = torch.cat((self.cached_k, k), dim=L_dim); v = self.cached_v = torch.cat((self.cached_v, v), dim=L_dim)
             else:
                 k = torch.cat((self.cached_k, k), dim=L_dim)
                 v = torch.cat((self.cached_v, v), dim=L_dim)
-                # print("si, k.shape", si, k.shape)
+
+        # k_memory_usage = k.numel() * k.element_size()  # K 的内存占用（以字节为单位）  
+        # v_memory_usage = v.numel() * v.element_size()  # V 的内存占用（以字节为单位）  
+        # print(f"K 的内存占用: {k_memory_usage} 字节")  
+        # print(f"V 的内存占用: {v_memory_usage} 字节")         
+        # print("si, k.shape", si, k.shape)
         # torch.testing.assert_close(q, q_.transpose(1, 2))
         # torch.testing.assert_close(k, k_.transpose(1, 2))
         # torch.testing.assert_close(v, v_.transpose(1, 2))
@@ -549,7 +574,7 @@ class CrossAttnBlock(nn.Module):
         self.checkpointing_sa_only = checkpointing_sa_only
     
     # NOTE: attn_bias_or_two_vector is None during inference
-    def forward(self, x, si, mask_id, cond_BD, ca_kv, attn_bias_or_two_vector, attn_fn=None, scale_schedule=None, rope2d_freqs_grid=None, scale_ind=0):    # todo: minGPT and vqgan also uses pre-norm, just like this, while MaskGiT uses post-norm
+    def forward(self, x, mask_id, cond_BD, ca_kv, attn_bias_or_two_vector, attn_fn=None, scale_schedule=None, rope2d_freqs_grid=None, scale_ind=0 ,si_para=0,kv_opt=None):    # todo: minGPT and vqgan also uses pre-norm, just like this, while MaskGiT uses post-norm
         #tt0 = time.time()
         with torch.cuda.amp.autocast(enabled=False):    # disable half precision
             if self.shared_aln: # always True;                   (1, 1, 6, C)  + (B, 1, 6, C)
@@ -573,7 +598,7 @@ class CrossAttnBlock(nn.Module):
             if self.checkpointing_sa_only and self.training:
                 x_sa = checkpoint(self.sa, x_sa, attn_bias_or_two_vector, attn_fn, scale_schedule, rope2d_freqs_grid, use_reentrant=False)
             else:
-                x_sa = self.sa(x_sa, si, mask_id, attn_bias_or_two_vector, attn_fn, scale_schedule, rope2d_freqs_grid, scale_ind=scale_ind)
+                x_sa = self.sa(x_sa, mask_id, attn_bias_or_two_vector, attn_fn, scale_schedule, rope2d_freqs_grid, scale_ind=scale_ind, si_para=si_para ,kv_opt=kv_opt)
             #tt3 = time.time()
             x = x + self.drop_path(x_sa.mul_(gamma1))
             #tt4 = time.time()

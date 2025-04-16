@@ -108,6 +108,9 @@ def gen_one_img(
     sampling_per_bits=1,
     enable_positive_prompt=0,
     verbose=False,
+    si_para = None,
+    ratio_list = None,
+    kv_opt = None,
 ):
     sstt = time.time()
     if not isinstance(cfg_list, list):
@@ -148,6 +151,9 @@ def gen_one_img(
             gt_leak=gt_leak, gt_ls_Bl=gt_ls_Bl, inference_mode=True,
             sampling_per_bits=sampling_per_bits,
             verbose=verbose,
+            si_para = si_para,
+            ratio_list = ratio_list,
+            kv_opt = kv_opt
         )
     
     # if category == 'macro_closeup':

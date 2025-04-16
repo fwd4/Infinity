@@ -48,7 +48,10 @@ args = argparse.Namespace(
     seed=0,
     bf16=1,
     save_file='tmp.jpg',
-    enable_model_cache=0
+    enable_model_cache=0,
+    si_para = 8,
+    ratio_list = [50,30,15,5],
+    kv_opt = None
 
 )
 
@@ -87,33 +90,7 @@ args=argparse.Namespace(
 text_tokenizer, text_encoder = load_tokenizer(t5_path=args.text_encoder_ckpt)
 get_torch_mem_usage()
 vae = load_visual_tokenizer(args)
-# # print("ffff")
-# print("vae mode:",vae)
 
-######################## TEST ########################
-# # Create a non-zero tensor with the desired shape
-# summed_codes = torch.zeros(1, 32, 1, 64, 64).cuda()
-
-# # Create a mask for the right upper corner
-# mask = torch.ones_like(summed_codes).cuda()
-# mask[:, :, :, 32:, 32:] = 0  # Set the right upper corner to zero
-
-# # Apply the mask to summed_codes
-# summed_codes = summed_codes * mask
-
-# img = vae.decode(summed_codes.squeeze(-3))
-# img = (img + 1) / 2
-# img = img.permute(0, 2, 3, 1).mul_(255).to(torch.uint8).flip(dims=(3,))
-# image= img[0]
-# save_pic = True
-# if save_pic:
-#     save_path = osp.join("/home/lianyaoxiu/lianyaoxiu/Infinity", "zeros_vae.jpg")
-#     os.makedirs(osp.dirname(save_path), exist_ok=True)
-
-#     succ = cv2.imwrite(save_path, image.cpu().numpy())
-#     print(f"Save successful: {succ}")
-#     print(f" image saved to {save_path}")
-######################## TEST ########################
 
 
 get_torch_mem_usage()
@@ -164,7 +141,7 @@ prompts = {
     # "blueberry_simple": "Fresh blueberries on a white background."  
 }
 # OUTPUT
-output_dir = "./outputs/pics_mtp"
+output_dir = f"./outputs/pics_mtp/mtp_{args.si_para}" 
 os.makedirs(output_dir, exist_ok=True)
 
 img_cnt = 0
@@ -232,6 +209,9 @@ for category, prompt in prompts.items():
         sampling_per_bits=args.sampling_per_bits,
         enable_positive_prompt=enable_positive_prompt,
         verbose=False,
+        si_para = args.si_para,
+        ratio_list = args.ratio_list,
+        kv_opt = args.kv_opt,
     )
 
     # img_cnt+=1
@@ -239,9 +219,9 @@ for category, prompt in prompts.items():
     #     exit(0)
 
     # SAVE
-    save_pic = False
+    save_pic = True
     if save_pic:
-        save_path = osp.join(output_dir, f"{category}_10_mtp_50_15_5.1.jpg")
+        save_path = osp.join(output_dir, f"{category}_mtp_{args.si_para}_{args.ratio_list}_{args.kv_opt}.jpg")
         cv2.imwrite(save_path, generated_image.cpu().numpy())
         print(f"{category} image saved to {save_path}")
 
