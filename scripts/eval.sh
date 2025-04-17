@@ -216,8 +216,8 @@ apply_spatial_patchify=0
 cfg_insertion_layer=0
 sub_fix=cfg${cfg}_tau${tau}_cfg_insertion_layer${cfg_insertion_layer}
 use_flex_attn=0
-si_para=12
-ratio_list='[100]'
+si_para=9
+ratio_list='[50,15,5]'
 kv_opt=0
 prefix=1497
 
@@ -228,7 +228,7 @@ if [ $# -eq 0 ]; then
     echo "Available tasks:"
     echo "  image_reward, hpsv21, gen_eval, mjhq30k_fid, val_loss"
     exit 1
-fi
+fis
 
 task=$1
 
