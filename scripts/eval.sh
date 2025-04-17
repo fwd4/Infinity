@@ -228,7 +228,7 @@ if [ $# -eq 0 ]; then
     echo "Available tasks:"
     echo "  image_reward, hpsv21, gen_eval, mjhq30k_fid, val_loss"
     exit 1
-fis
+fiss
 
 task=$1
 
@@ -245,7 +245,7 @@ case $task in
         ;;
     gen_eval)
         rewrite_prompt=2
-        out_dir="${out_dir_root}/gen_eval_${sub_fix}_rewrite_prompt${rewrite_prompt}_flex_attn${use_flex_attn}_round2_real_rewrite_prefix${prefix}_mtp1"
+        out_dir="${out_dir_root}/gen_eval_${sub_fix}_rewrite_prompt${rewrite_prompt}_flex_attn${use_flex_attn}_round2_real_rewrite_prefix${prefix}_si_para${si_para}-ratio_list${ratio_list}-kv_opt${kv_opt}_scdue8-24"
         test_gen_eval
         break
         ;;
