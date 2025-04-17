@@ -722,8 +722,6 @@ class Infinity(nn.Module):
         compute_loss = False
         save_codes = False
         save_para_codes = False
-        with open('skip_list.pkl', 'rb') as f:
-            skip_list = pickle.load(f)
         profile = True
 
         # 用于存储每个scale的codes和summed_codes
@@ -998,9 +996,7 @@ class Infinity(nn.Module):
                 if si != num_stages_minus_1:
                     test_partial_code = F.interpolate(codes, size=vae_scale_schedule[-1], mode=vae.quantizer.z_interplote_up)
                     test_partial_list.append(test_partial_code)                    
-                    # summed_codes_5 += test_partial_code
                 else:
-                    # summed_codes_5 += codes
                     test_partial_list.append(codes)
     
                 if profile:
@@ -1017,17 +1013,6 @@ class Infinity(nn.Module):
             with open(f'outputs/codes_mtp/test_combined_data_{category}_50_5_5.pkl', 'wb') as f:
                 pickle.dump(combined_data, f)
 
-
-        # 将 codes_data 和 summed_codes_data 合并到一个字典中
-        combined_data = {
-            'partial_codes_data': partial_codes_data,
-            'codes_data': codes_data,
-            'summed_codes_data': summed_codes_data
-        }
-        if save_codes:
-            # 保存 combined_data 到 pkl 文件
-            with open(f'outputs/codes/test_pixel_partialblock_data_{category}.pkl', 'wb') as f:
-                pickle.dump(partial_codes_data, f)
         
         # 保存 loss_data 到 pkl 文件
         if compute_loss:
