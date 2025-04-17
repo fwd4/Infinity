@@ -2,7 +2,8 @@
 export HF_HOME=/root/huggingface
 export HF_ENDPOINT=https://hf-mirror.com
 
-export CUDA_VISIBLE_DEVICES=2
+set -euo pipefail
+
 infer_eval_image_reward() {
     # ${pip_ext} install image-reward pytorch_lightning
     # ${pip_ext} install -U timm diffusers
@@ -122,7 +123,7 @@ test_gen_eval() {
 }
 
 test_fid() {
-    ${pip_ext} install pytorch_fid
+    # ${pip_ext} install pytorch_fid
 
     # step 1, infer images
     ${python_ext} tools/comprehensive_infer.py \
@@ -147,9 +148,13 @@ test_fid() {
     --cfg_insertion_layer ${cfg_insertion_layer} \
     --coco30k_prompts 0 \
     --save4fid_eval 1 \
+    --use_flex_attn ${use_flex_attn} \
     --jsonl_filepath ${jsonl_filepath} \
     --long_caption_fid ${long_caption_fid} \
     --out_dir  ${out_dir} \
+    --si_para ${si_para}\
+    --ratio_list ${ratio_list}\
+    --kv_opt ${kv_opt}
 
     # step 2, compute fid
     ${python_ext} tools/fid_score.py \
@@ -196,23 +201,23 @@ model_type=infinity_2b
 use_scale_schedule_embedding=0
 use_bit_label=1
 checkpoint_type='torch'
-infinity_model_path=/home/model_data/infinity_2b_reg.pth
+infinity_model_path=weights/infinity_2b_reg.pth
 out_dir_root=output/infinity_2b_evaluation
 vae_type=32
-vae_path=/home/model_data/infinity_vae_d32reg.pth
+vae_path=weights/infinity_vae_d32reg.pth
 cfg=4
 tau=1
 rope2d_normalized_by_hw=2
 add_lvl_embeding_only_first_block=1
 rope2d_each_sa_layer=1
-text_encoder_ckpt=/home/model_data/flan-t5-xl
+text_encoder_ckpt=weights/flan-t5-xl
 text_channels=2048
 apply_spatial_patchify=0
 cfg_insertion_layer=0
 sub_fix=cfg${cfg}_tau${tau}_cfg_insertion_layer${cfg_insertion_layer}
 use_flex_attn=0
-si_para=8
-ratio_list='[50,30,15,5]'
+si_para=12
+ratio_list='[100]'
 kv_opt=0
 prefix=1497
 
@@ -221,7 +226,7 @@ prefix=1497
 if [ $# -eq 0 ]; then
     echo "Usage: $0 [task_name]"
     echo "Available tasks:"
-    echo "  image_reward, hpsv21, gen_eval, long_caption_fid, val_loss"
+    echo "  image_reward, hpsv21, gen_eval, mjhq30k_fid, val_loss"
     exit 1
 fi
 
@@ -240,15 +245,14 @@ case $task in
         ;;
     gen_eval)
         rewrite_prompt=2
-        out_dir="${out_dir_root}/gen_eval_${sub_fix}_rewrite_prompt${rewrite_prompt}_flex_attn${use_flex_attn}_round2_real_rewrite_prefix${prefix}_si_para${si_para}-ratio_list${ratio_list}-kv_opt${kv_opt}"
+        out_dir="${out_dir_root}/gen_eval_${sub_fix}_rewrite_prompt${rewrite_prompt}_flex_attn${use_flex_attn}_round2_real_rewrite_prefix${prefix}_mtp1"
         test_gen_eval
         break
         ;;
-    long_caption_fid)
+    mjhq30k_fid)
         long_caption_fid=1
-        jsonl_filepath='[YOUR VAL JSONL FILEPATH]'
-        out_dir="${out_dir_root}/val_long_caption_fid_${sub_fix}_rewrite_prompt${rewrite_prompt}"
-        rm -rf "${out_dir}"
+        jsonl_filepath='data/mjhq30k/meta_data.json'
+        out_dir="${out_dir_root}/val_mjhq30k_fid_${sub_fix}_flex_attn${use_flex_attn}_si_para${si_para}_ratio${ratio_list}_kvopt${kv_opt}"
         test_fid
         break
         ;;
