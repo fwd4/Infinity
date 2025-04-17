@@ -2,7 +2,7 @@
 export HF_HOME=/root/huggingface
 export HF_ENDPOINT=https://hf-mirror.com
 
-export CUDA_VISIBLE_DEVICES=2
+export CUDA_VISIBLE_DEVICES=1
 infer_eval_image_reward() {
     # ${pip_ext} install image-reward pytorch_lightning
     # ${pip_ext} install -U timm diffusers
@@ -234,7 +234,7 @@ case $task in
         ;;
     gen_eval)
         rewrite_prompt=2
-        out_dir="${out_dir_root}/gen_eval_${sub_fix}_rewrite_prompt${rewrite_prompt}_flex_attn${use_flex_attn}_round2_real_rewrite_prefix${prefix}"
+        out_dir="${out_dir_root}/gen_eval_${sub_fix}_rewrite_prompt${rewrite_prompt}_flex_attn${use_flex_attn}_round2_real_rewrite_prefix${prefix}_[50,15,5]_schdu8-24"
         test_gen_eval
         break
         ;;
