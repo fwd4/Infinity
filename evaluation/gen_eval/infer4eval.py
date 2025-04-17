@@ -15,9 +15,6 @@ import torch
 import numpy as np
 from pytorch_lightning import seed_everything
 
-import sys
-path_to_add = os.path.join(os.path.dirname(os.path.abspath(__file__)), '../..') 
-sys.path.append(path_to_add)  
 from infinity.utils.csv_util import load_csv_as_dicts, write_dicts2csv_file
 from tools.run_infinity import *
 from conf import HF_TOKEN, HF_HOME
@@ -34,7 +31,7 @@ if __name__ == '__main__':
     parser.add_argument('--outdir', type=str, default='')
     parser.add_argument('--n_samples', type=int, default=4)
     parser.add_argument('--metadata_file', type=str, default='evaluation/gen_eval/prompts/evaluation_metadata.jsonl')
-    parser.add_argument('--rewrite_prompt', type=int, default=0, choices=[0,1])
+    parser.add_argument('--rewrite_prompt', type=int, default=0, choices=[0,1,2])
     parser.add_argument('--load_rewrite_prompt_cache', type=int, default=1, choices=[0,1])
     args = parser.parse_args()
 
@@ -90,11 +87,13 @@ if __name__ == '__main__':
                 prompt = prompt_rewrite_cache[prompt]
             else:
                 refined_prompt = prompt_rewriter.rewrite(prompt)
-                input_key_val = extract_key_val(refined_prompt)
-                prompt = input_key_val['prompt']
-                prompt_rewrite_cache[prompt] = prompt
-            print(f'old_prompt: {old_prompt}, refined_prompt: {prompt}')
-        print("============wttttffffff=============")
+                #refined_prompt = "<prompt:Generate an image with the text 'Never Stop Learning' in chalkboard style.><cfg:3>"
+                # print(refined_prompt)
+                # input_key_val = extract_key_val(refined_prompt)
+                # prompt = input_key_val['prompt']
+                prompt_rewrite_cache[prompt] = refined_prompt
+                prompt = refined_prompt
+            print(f'old_prompt    : {old_prompt}\nrefined_prompt: {prompt}')
             
         images = []
         for sample_j in range(args.n_samples):
@@ -142,3 +141,6 @@ if __name__ == '__main__':
     
         with open(prompt_rewrite_cache_file, 'w') as f:
             json.dump(prompt_rewrite_cache, f, indent=2)
+    
+    with open(os.path.join(outpath, "perf.log"), "w") as fp:
+        fp.write(f"img_cnt: {len(images)}, cost: {np.mean(COST[1:])}, infinity cost={np.mean(INFI_COST[1:])}")
