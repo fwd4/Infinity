@@ -19,7 +19,7 @@ from transformers import AutoTokenizer, T5EncoderModel, T5TokenizerFast
 from PIL import Image, ImageEnhance
 import torch.nn.functional as F
 from torch.cuda.amp import autocast
-import cupy
+# import cupy
 
 import sys
 path_to_add = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..') 
@@ -108,6 +108,8 @@ def gen_one_img(
     sampling_per_bits=1,
     enable_positive_prompt=0,
     verbose=False,
+    si_list = [9,10,11,12],
+    ratio_list = [50,25,0,0],
 ):
     sstt = time.time()
     if not isinstance(cfg_list, list):
@@ -148,6 +150,8 @@ def gen_one_img(
             gt_leak=gt_leak, gt_ls_Bl=gt_ls_Bl, inference_mode=True,
             sampling_per_bits=sampling_per_bits,
             verbose=verbose,
+            si_list = si_list,
+            ratio_list = ratio_list
         )
     
     # if category == 'macro_closeup':
