@@ -1,7 +1,8 @@
 #!/bin/bash
-pip config set global.index-url https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple
+export HF_HOME=/root/huggingface
+export HF_ENDPOINT=https://hf-mirror.com
 
-export CUDA_VISIBLE_DEVICES=2 
+export CUDA_VISIBLE_DEVICES=2
 infer_eval_image_reward() {
     # ${pip_ext} install image-reward pytorch_lightning
     # ${pip_ext} install -U timm diffusers
@@ -24,6 +25,7 @@ infer_eval_image_reward() {
     --use_scale_schedule_embedding ${use_scale_schedule_embedding} \
     --cfg ${cfg} \
     --tau ${tau} \
+    --use_flex_attn ${use_flex_attn} \
     --checkpoint_type ${checkpoint_type} \
     --text_encoder_ckpt ${text_encoder_ckpt} \
     --text_channels ${text_channels} \
@@ -33,7 +35,7 @@ infer_eval_image_reward() {
 
     # step 2, compute image reward
     # ${pip_ext} install diffusers==0.16.0
-    # ${pip_ext} install git+https://github.com/openai/CLIP.git ftfy
+    # ${pip_ext} install git+ssh://git@github.com/openai/CLIP.git ftfy
     ${python_ext} evaluation/image_reward/cal_imagereward.py \
     --meta_file ${out_dir}/metadata.jsonl
 }
@@ -41,9 +43,10 @@ infer_eval_image_reward() {
 infer_eval_hpsv21() {
     # ${pip_ext} install hpsv2
     # ${pip_ext} install -U diffusers
-    # sudo apt install python3-tk
+    # apt install python3-tk wget -y
     # wget https://dl.fbaipublicfiles.com/mmf/clip/bpe_simple_vocab_16e6.txt.gz
-    # mv bpe_simple_vocab_16e6.txt.gz /home/tiger/.local/lib/python3.9/site-packages/hpsv2/src/open_clip
+    # PYSITE="/usr/local/lib/python3.10/dist-packages"
+    # mv bpe_simple_vocab_16e6.txt.gz $PYSITE/hpsv2/src/open_clip
 
     mkdir -p ${out_dir}
     ${python_ext} evaluation/hpsv2/eval_hpsv2.py \
@@ -61,6 +64,7 @@ infer_eval_hpsv21() {
     --use_scale_schedule_embedding ${use_scale_schedule_embedding} \
     --cfg ${cfg} \
     --tau ${tau} \
+    --use_flex_attn ${use_flex_attn} \
     --checkpoint_type ${checkpoint_type} \
     --text_encoder_ckpt ${text_encoder_ckpt} \
     --text_channels ${text_channels} \
@@ -94,6 +98,7 @@ test_gen_eval() {
     --use_scale_schedule_embedding ${use_scale_schedule_embedding} \
     --cfg ${cfg} \
     --tau ${tau} \
+    --use_flex_attn ${use_flex_attn} \
     --checkpoint_type ${checkpoint_type} \
     --text_encoder_ckpt ${text_encoder_ckpt} \
     --text_channels ${text_channels} \
@@ -182,8 +187,6 @@ test_val_loss() {
 python_ext=python3
 pip_ext=pip3
 
-
-
 # set arguments for inference
 pn=1M
 model_type=infinity_2b
@@ -191,11 +194,11 @@ use_scale_schedule_embedding=0
 use_bit_label=1
 checkpoint_type='torch'
 infinity_model_path=/home/model_data/infinity_2b_reg.pth
-out_dir_root=outputs/infinity_2b_evaluation
+out_dir_root=output/infinity_2b_evaluation
 vae_type=32
 vae_path=/home/model_data/infinity_vae_d32reg.pth
 cfg=4
-tau=0.5
+tau=1
 rope2d_normalized_by_hw=2
 add_lvl_embeding_only_first_block=1
 rope2d_each_sa_layer=1
@@ -204,33 +207,59 @@ text_channels=2048
 apply_spatial_patchify=0
 cfg_insertion_layer=0
 sub_fix=cfg${cfg}_tau${tau}_cfg_insertion_layer${cfg_insertion_layer}
+use_flex_attn=0
+prefix=1497
 
-# ImageReward
-# out_dir=${out_dir_root}/image_reward_${sub_fix}
-# infer_eval_image_reward
-# exit 0
 
-# HPS v2.1
-# out_dir=${out_dir_root}/hpsv21_${sub_fix}
-# infer_eval_hpsv21
-# exit 0
+# 参数校验
+if [ $# -eq 0 ]; then
+    echo "Usage: $0 [task_name]"
+    echo "Available tasks:"
+    echo "  image_reward, hpsv21, gen_eval, long_caption_fid, val_loss"
+    exit 1
+fi
 
-# GenEval
-rewrite_prompt=0
-out_dir=${out_dir_root}/gen_eval_${sub_fix}_rewrite_prompt${rewrite_prompt}_round2_real_rewrite
-test_gen_eval
-exit 0
+task=$1
 
-# long caption fid
-long_caption_fid=1
-jsonl_filepath='[YOUR VAL JSONL FILEPATH]'
-out_dir=${out_dir_root}/val_long_caption_fid_${sub_fix}
-rm -rf ${out_dir}
-# test_fid
+case $task in
+    image_reward)
+        out_dir="${out_dir_root}/image_reward_${sub_fix}_flex_attn${use_flex_attn}_prefix${prefix}"
+        infer_eval_image_reward
+        break
+        ;;
+    hpsv21)
+        out_dir="${out_dir_root}/hpsv21_${sub_fix}_flex_attn${use_flex_attn}_prefix${prefix}"
+        infer_eval_hpsv21
+        break
+        ;;
+    gen_eval)
+        rewrite_prompt=2
+        out_dir="${out_dir_root}/gen_eval_${sub_fix}_rewrite_prompt${rewrite_prompt}_flex_attn${use_flex_attn}_round2_real_rewrite_prefix${prefix}"
+        test_gen_eval
+        break
+        ;;
+    long_caption_fid)
+        long_caption_fid=1
+        jsonl_filepath='[YOUR VAL JSONL FILEPATH]'
+        out_dir="${out_dir_root}/val_long_caption_fid_${sub_fix}_rewrite_prompt${rewrite_prompt}"
+        rm -rf "${out_dir}"
+        test_fid
+        break
+        ;;
+    val_loss)
+        out_dir="${out_dir_root}/val_loss_${sub_fix}_rewrite_prompt${rewrite_prompt}"
+        reweight_loss_by_scale=0
+        jsonl_folder='[YOUR VAL JSONL FILEPATH]'
+        noise_apply_strength=0.2
+        test_val_loss
+        break
+        ;;
+    *)
+        echo "Error: Unknown task '$task'"
+        echo "Available tasks:"
+        echo "  image_reward, hpsv21, gen_eval, long_caption_fid, val_loss"
+        exit 1
+        ;;
+esac
 
-# test val loss
-out_dir=${out_dir_root}/val_loss_${sub_fix}
-reweight_loss_by_scale=0
-jsonl_folder='[YOUR VAL JSONL FILEPATH]'
-noise_apply_strength=0.2
-# test_val_loss
+echo "Task [$task] executed successfully"
