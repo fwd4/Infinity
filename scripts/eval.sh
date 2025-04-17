@@ -106,9 +106,7 @@ test_gen_eval() {
     --cfg_insertion_layer ${cfg_insertion_layer} \
     --outdir ${out_dir}/images \
     --rewrite_prompt ${rewrite_prompt}\
-    --si_para ${si_para}\
-    --ratio_list ${ratio_list}\
-    --kv_opt ${kv_opt}
+
 
     # detect objects
     ${python_ext} evaluation/gen_eval/evaluate_images.py ${out_dir}/images \

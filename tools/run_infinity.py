@@ -406,7 +406,10 @@ def add_common_arguments(parser):
     parser.add_argument('--enable_model_cache', type=int, default=0, choices=[0,1])
     parser.add_argument('--checkpoint_type', type=str, default='torch')
     parser.add_argument('--seed', type=int, default=0)
-    parser.add_argument('--bf16', type=int, default=1, choices=[0,1])
+    parser.add_argument('--bf16', type=int, default=1, choices=[0,1])    
+    parser.add_argument('--si_para', type=int, default=1)
+    parser.add_argument('--ratio_list', type=str, default='[50,25,0,0]')    
+    parser.add_argument('--kv_opt', type=int, default=0) 
     
 
 
