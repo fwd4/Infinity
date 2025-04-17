@@ -23,7 +23,7 @@ from conf import HF_TOKEN, HF_HOME
 os.environ['HF_TOKEN'] = HF_TOKEN
 os.environ['HF_HOME'] = HF_HOME
 os.environ['XFORMERS_FORCE_DISABLE_TRITON'] = '1'
-import ast
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -135,7 +135,7 @@ if __name__ == '__main__':
                 scale_schedule = [(1, h, w) for (_, h, w) in scale_schedule]
                 tgt_h, tgt_w = dynamic_resolution_h_w[h_div_w_template][args.pn]['pixel']
                 image = gen_one_img(infinity, vae, text_tokenizer, text_encoder, prompt, tau_list=tau, cfg_sc=3, cfg_list=cfg, scale_schedule=scale_schedule, cfg_insertion_layer=[args.cfg_insertion_layer], 
-                                    vae_type=args.vae_type, si_list = [9,10,11,12], ratio_list = [50,25,0,0])
+                                    vae_type=args.vae_type, si_list = [9,10,11,12], ratio_list = [60,50,0,0] )
             else:
                 raise ValueError
             t2 = time.time()

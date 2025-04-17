@@ -20,6 +20,7 @@ from PIL import Image, ImageEnhance
 import torch.nn.functional as F
 from torch.cuda.amp import autocast
 # import cupy
+import ast  # 用于安全地解析字符串表示的 Python 数据结构   
 
 import sys
 path_to_add = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..') 
