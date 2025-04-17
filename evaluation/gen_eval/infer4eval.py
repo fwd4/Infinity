@@ -15,9 +15,6 @@ import torch
 import numpy as np
 from pytorch_lightning import seed_everything
 
-import sys
-path_to_add = os.path.join(os.path.dirname(os.path.abspath(__file__)), '../..') 
-sys.path.append(path_to_add)  
 from infinity.utils.csv_util import load_csv_as_dicts, write_dicts2csv_file
 from tools.run_infinity import *
 from conf import HF_TOKEN, HF_HOME
@@ -34,9 +31,17 @@ if __name__ == '__main__':
     parser.add_argument('--outdir', type=str, default='')
     parser.add_argument('--n_samples', type=int, default=4)
     parser.add_argument('--metadata_file', type=str, default='evaluation/gen_eval/prompts/evaluation_metadata.jsonl')
-    parser.add_argument('--rewrite_prompt', type=int, default=0, choices=[0,1])
+    parser.add_argument('--rewrite_prompt', type=int, default=0, choices=[0,1,2])
     parser.add_argument('--load_rewrite_prompt_cache', type=int, default=1, choices=[0,1])
     args = parser.parse_args()
+
+    # 将字符串转换为列表  
+    if args.ratio_list:  
+        try:  
+            ratio_list = ast.literal_eval(args.ratio_list)  
+        except (ValueError, SyntaxError):  
+            print("Error: Invalid format for ratio_list")  
+            ratio_list = []  # 设置默认值 
 
     # parse cfg
     args.cfg = list(map(float, args.cfg.split(',')))
@@ -90,11 +95,13 @@ if __name__ == '__main__':
                 prompt = prompt_rewrite_cache[prompt]
             else:
                 refined_prompt = prompt_rewriter.rewrite(prompt)
-                input_key_val = extract_key_val(refined_prompt)
-                prompt = input_key_val['prompt']
-                prompt_rewrite_cache[prompt] = prompt
-            print(f'old_prompt: {old_prompt}, refined_prompt: {prompt}')
-        print("============wttttffffff=============")
+                #refined_prompt = "<prompt:Generate an image with the text 'Never Stop Learning' in chalkboard style.><cfg:3>"
+                # print(refined_prompt)
+                # input_key_val = extract_key_val(refined_prompt)
+                # prompt = input_key_val['prompt']
+                prompt_rewrite_cache[prompt] = refined_prompt
+                prompt = refined_prompt
+            print(f'old_prompt    : {old_prompt}\nrefined_prompt: {prompt}')
             
         images = []
         for sample_j in range(args.n_samples):
@@ -127,7 +134,8 @@ if __name__ == '__main__':
                 scale_schedule = dynamic_resolution_h_w[h_div_w_template][args.pn]['scales']
                 scale_schedule = [(1, h, w) for (_, h, w) in scale_schedule]
                 tgt_h, tgt_w = dynamic_resolution_h_w[h_div_w_template][args.pn]['pixel']
-                image = gen_one_img(infinity, vae, text_tokenizer, text_encoder, prompt, tau_list=tau, cfg_sc=3, cfg_list=cfg, scale_schedule=scale_schedule, cfg_insertion_layer=[args.cfg_insertion_layer], vae_type=args.vae_type)
+                image = gen_one_img(infinity, vae, text_tokenizer, text_encoder, prompt, tau_list=tau, cfg_sc=3, cfg_list=cfg, scale_schedule=scale_schedule, cfg_insertion_layer=[args.cfg_insertion_layer], 
+                                    vae_type=args.vae_type, si_list = [9,10,11,12], ratio_list = [50,25,0,0],)
             else:
                 raise ValueError
             t2 = time.time()
@@ -142,3 +150,6 @@ if __name__ == '__main__':
     
         with open(prompt_rewrite_cache_file, 'w') as f:
             json.dump(prompt_rewrite_cache, f, indent=2)
+    
+    with open(os.path.join(outpath, "perf.log"), "w") as fp:
+        fp.write(f"img_cnt: {len(images)}, cost: {np.mean(COST[1:])}, infinity cost={np.mean(INFI_COST[1:])}")
