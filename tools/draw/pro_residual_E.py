@@ -194,7 +194,7 @@ def compute_contribution(A, B, C, D, E, R, base, eps=1e-8):
     
     return results  
 
-def visualize_contributions(results, save_path=None, example_pixel=(32, 32), batch_idx=None, fig=None):  
+def visualize_contributions(results, save_path=None, example_pixel=(32, 32), batch_idx=None, fig=None, category=""):  
 
     # 提取结果  
     raw_contrib = results['raw_contribution']       # [5, 64, 64]  
@@ -261,7 +261,7 @@ def visualize_contributions(results, save_path=None, example_pixel=(32, 32), bat
     batch_title = f"batch {batch_idx}" if batch_idx is not None else ""  
     fig.suptitle(batch_title, fontsize=16)  
     
-    gs = gridspec.GridSpec(4, 6, height_ratios=[1, 1, 0.8, 0.8], width_ratios=[1, 1, 1, 1, 1, 1])  
+    gs = gridspec.GridSpec(5, 6, height_ratios=[1, 1, 1, 0.8, 0.8], width_ratios=[1, 1, 1, 1, 1, 1])  
     
     # 颜色映射  
     cmap_contrib = plt.cm.RdBu_r  # 红蓝色图: 红色=正贡献, 蓝色=负贡献  
@@ -304,36 +304,88 @@ def visualize_contributions(results, save_path=None, example_pixel=(32, 32), bat
     '''
     for i, name in enumerate(names_global):  
         ax = plt.subplot(gs[0, i])  
+        ax1 = plt.subplot(gs[1, i])  
         
         vmax = np.max(np.abs(norm_contrib_np_global))  
         vmin = -vmax   
+        # 创建一个掩码数组，初始化为NaN
+        filtered_data = np.full_like(norm_contrib_np_global[i], np.nan)
+        
+        # 获取原始数据的绝对值
+        abs_data = np.abs(norm_contrib_np_global[i])
+        
+        # 计算阈值（绝对值的前10%）
+        threshold = np.percentile(abs_data[~np.isnan(abs_data)], 90)
+        
+        # 只保留绝对值大于阈值的点
+        mask = abs_data > threshold
+        filtered_data[mask] = norm_contrib_np_global[i][mask]
         
         im = ax.imshow(norm_contrib_np_global[i], cmap=cmap_contrib, vmin=vmin, vmax=vmax)  
         ax.set_title(f'{name} Normalized contribution rate')  
         ax.set_xticks([])  
         ax.set_yticks([])  
+
+        im1 = ax1.imshow(filtered_data, cmap=cmap_contrib, vmin=vmin, vmax=vmax)  
+        ax1.set_title(f'Top 10% {name} Normalized contribution rate')  
+        ax1.set_xticks([])  
+        ax1.set_yticks([])  
+
         
         # # 为第一个图添加颜色条  
         # if i == 0:  
         plt.colorbar(im, ax=ax, shrink=0.3)  
+        plt.colorbar(im1, ax=ax1, shrink=0.3)  
 
+    stacked_image = np.zeros((64, 64, 3))
+    colors = np.array([
+        [1.0, 0, 0],
+        [0, 1.0, 0],
+        [0, 0, 1.0],
+        [1.0, 1.0, 1.0],
+    ]) * 0.5
     for i, name in enumerate(names[:-1]):  
         ax = plt.subplot(gs[0, i+2])  
+        ax1 = plt.subplot(gs[1, i+2])  
         
         vmax = np.max(np.abs(norm_contrib_np))  
         vmin = -vmax   
+        # import pdb; pdb.set_trace()
         
         im = ax.imshow(norm_contrib_np[i], cmap=cmap_contrib, vmin=vmin, vmax=vmax)  
         ax.set_title(f'{name} Normalized contribution rate')  
         ax.set_xticks([])  
         ax.set_yticks([])  
+
+        # 创建一个掩码数组，初始化为NaN
+        filtered_data = np.full_like(norm_contrib_np[i], 0)
+        
+        # 获取原始数据的绝对值
+        abs_data = np.abs(norm_contrib_np[i])
+        
+        # 计算阈值（绝对值的前10%）
+        threshold = np.percentile(abs_data[~np.isnan(abs_data)], 95)
+        
+        # 只保留绝对值大于阈值的点
+        mask = abs_data > threshold
+        filtered_data[mask] = 1
+        stacked_image += np.expand_dims(filtered_data, 2) * colors[i]
+        is_all_zero = np.all(stacked_image == 0, axis=-1)
+        stacked_image[is_all_zero] = np.nan
+
+        im1 = ax1.imshow(stacked_image, alpha=1, vmin=vmin, vmax=vmax)  
+        stacked_image[is_all_zero] = 0
+        ax1.set_title(f'Top 10% {name} Normalized contribution rate')  
+        ax1.set_xticks([])  
+        ax1.set_yticks([])  
         
         # # 为第一个图添加颜色条  
         # if i == 0:  
         plt.colorbar(im, ax=ax, shrink=0.3)  
 
+    
     # 2.1 主导贡献者地图 - 第2行第一格  
-    ax = plt.subplot(gs[1, 0])  
+    ax = plt.subplot(gs[2, 0])  
     colors = [component_colors[i] for i in range(len(names_global))]  
     cmap_components = LinearSegmentedColormap.from_list('Components', colors, N=len(names_global))  
     
@@ -347,7 +399,7 @@ def visualize_contributions(results, save_path=None, example_pixel=(32, 32), bat
     ax.legend(handles=legend_elements, loc='upper right', fontsize=10)  
 
     # 2.2 主导贡献者地图 - 第2行第2格  
-    ax = plt.subplot(gs[1, 1])   
+    ax = plt.subplot(gs[2, 1])   
     colors = [component_colors[i] for i in range(len(names))]  
     cmap_components = LinearSegmentedColormap.from_list('Components', colors, N=len(names))  
     
@@ -363,7 +415,7 @@ def visualize_contributions(results, save_path=None, example_pixel=(32, 32), bat
 
 
     # 2.3 主导贡献者地图 - 第2行第3格  
-    ax = plt.subplot(gs[1, 2])   
+    ax = plt.subplot(gs[2, 2])   
     colors = [component_colors[i] for i in range(len(names))]  
     cmap_components = LinearSegmentedColormap.from_list('Components', colors, N=len(names))  
 
@@ -371,18 +423,31 @@ def visualize_contributions(results, save_path=None, example_pixel=(32, 32), bat
     ax.set_title('Map of Dominant Contributors (Filtered)')  
     ax.set_xticks([])  
     ax.set_yticks([])  
-    
+
     # 添加图例  
     legend_elements = [Patch(facecolor=component_colors[i], label=name)   
                       for i, name in enumerate(names)]  
     ax.legend(handles=legend_elements, loc='upper right', fontsize=10) 
 
+    # 2.4 Load and display JPEG image - 第2行第4格
+    ax = plt.subplot(gs[2, 3])
+    try:
+        img = plt.imread(f'/workspace/Infinity/output/infinity_2b_evaluation/mjhq30k_raw/pred/{category}/{batch_idx}.jpg')
+        im = ax.imshow(img)
+        ax.set_title('Reference Image')
+        ax.set_xticks([])
+        ax.set_yticks([])
+    except:
+        print(f"Warning: Could not load reference image {batch_idx}")
+    
+
+
     # 3.1 贡献者 - 第3行 
-    ax = plt.subplot(gs[2, 0:6]) 
+    ax = plt.subplot(gs[3, 0:6]) 
     plot_contri(ax, results['normalized_contribution_global'])
 
     # 4.1 贡献者 - 第4行  
-    ax = plt.subplot(gs[3, 0:6]) 
+    ax = plt.subplot(gs[4, 0:6]) 
     plot_contri(ax, results['normalized_contribution'])
 
     plt.tight_layout(rect=[0, 0, 1, 0.97])  # 为顶部总标题留出空间  
@@ -432,7 +497,7 @@ def visualize_contributions(results, save_path=None, example_pixel=(32, 32), bat
     return fig  
 
 
-def analyze_component_contributions(A, B, C, D, E, R, base, example_pixel=(32, 32), save_path=None, batch_idx=None, fig=None):  
+def analyze_component_contributions(A, B, C, D, E, R, base, example_pixel=(32, 32), save_path=None, batch_idx=None, fig=None, category=None):  
     """  
     分析矩阵A,B,C,D对E的贡献，并可视化结果  
     
@@ -449,7 +514,7 @@ def analyze_component_contributions(A, B, C, D, E, R, base, example_pixel=(32, 3
     results = compute_contribution(A, B, C, D, E, R, base)  
     
     # 可视化结果  
-    fig = visualize_contributions(results, save_path, example_pixel, batch_idx, fig)  
+    fig = visualize_contributions(results, save_path, example_pixel, batch_idx, fig, category=category)  
     
     return results, fig  
 
@@ -523,17 +588,19 @@ def batch_analyze_tensors(tensor_path, output_folder, num_batches=20, example_pi
                 example_pixel=example_pixel,  
                 save_path=individual_save_path,  
                 batch_idx=batch_label,  
-                fig=fig  
+                fig=fig,
+                category=name_without_extension  
             )  
             
             pdf.savefig(fig)  
+            break
     
     print(f"所有批次处理完成!PDF已保存至: {pdf_filename}")  
 
 
 if __name__ == "__main__":  
     # 数据路径和输出文件夹  
-    folder_path = '/home/lianyaoxiu/lianyaoxiu/fwd4/Infinity/output/infinity_2b_evaluation/mjhq30k_raw/pred'
+    folder_path = '/workspace/Infinity/output/infinity_2b_evaluation/mjhq30k_raw/pred'
     output_folder = "resi_contri_E"  
     for file_name in os.listdir(folder_path):
         if file_name.endswith('.pkl'):
@@ -544,4 +611,4 @@ if __name__ == "__main__":
                 output_folder=output_folder,
                 num_batches=200,  # 只处理前200个批次
                 example_pixel=(32, 32)  # 默认示例像素
-            ) 
+            )

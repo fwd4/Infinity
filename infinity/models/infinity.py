@@ -861,6 +861,7 @@ class Infinity(nn.Module):
         test_partial_list0 = []  
         mask_list = None
 
+        record_codes = None
         for si, pn in enumerate(scale_schedule):   # si: i-th segment
             # if si>=11:
             #     break
@@ -954,9 +955,9 @@ class Infinity(nn.Module):
                     idx_Bld_list.append(idx_Bld)
                     codes = vae.quantizer.lfq.indices_to_codes(idx_Bld, label_type='bit_label') 
                 ######################### 1 #############################
-                
+                residual = F.interpolate(codes, size=vae_scale_schedule[-1], mode=vae.quantizer.z_interplote_up) 
                 if si != num_stages_minus_1:
-                    summed_codes += F.interpolate(codes, size=vae_scale_schedule[-1], mode=vae.quantizer.z_interplote_up)
+                    summed_codes += residual
                     if si == si_para:
                         summed_codes_para = summed_codes.clone()  # Save summed_codes for stage 8
                         continue
@@ -971,9 +972,18 @@ class Infinity(nn.Module):
                     last_stage = torch.permute(last_stage, [0,2,1]) # [B, h*w, d] or [B, h*w, 4d]
                 else:
                     summed_codes += codes
+                    record_codes = torch.cat((record_codes, codes, summed_codes), dim=0)
+                    # print(si, si_para, record_codes.shape, residual.shape)
                     if si == si_para:
                         summed_codes_para = summed_codes.clone()  # Save summed_codes for stage 8
                         continue
+
+                if len(scale_schedule) - si <= 4:
+                    if record_codes is None:
+                        record_codes = residual.clone()
+                    else:
+                        record_codes = torch.cat((record_codes, residual), dim=0)
+                    # print(si, si_para,num_stages_minus_1,record_codes.shape, residual.shape)
 
                     ######################### 2.1 #############################
 
@@ -1162,7 +1172,7 @@ class Infinity(nn.Module):
         img = img.permute(0, 2, 3, 1).mul_(255).to(torch.uint8).flip(dims=(3,))
         # print(f"pre: {tt1 - tt0:.2f}ms, backbone: {tt2-tt1:.2f}ms, post{tt3 - tt2:.2f}ms")
         #ATTN_TIME.append(backbone_time)
-        return ret, idx_Bl_list, img
+        return record_codes.reshape(1, 5, 32, 64, 64), idx_Bl_list, img
     
     @for_visualize
     def vis_key_params(self, ep):

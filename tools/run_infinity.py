@@ -19,17 +19,6 @@ from transformers import AutoTokenizer, T5EncoderModel, T5TokenizerFast
 from PIL import Image, ImageEnhance
 import torch.nn.functional as F
 from torch.cuda.amp import autocast
-# import cupy
-import ast  # 用于安全地解析字符串表示的 Python 数据结构   
-
-
-import sys
-path_to_add = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..') 
-sys.path.append(path_to_add)  
-
-from torch.profiler import profile, schedule, tensorboard_trace_handler, ProfilerActivity
-
-trace_handler = tensorboard_trace_handler(dir_name=f"outputs/profile", use_gzip=False)
 
 from infinity.models.infinity import Infinity, get_torch_mem_usage#, ATTN_TIME
 from infinity.models.basic import *
@@ -37,6 +26,8 @@ import PIL.Image as PImage
 from torchvision.transforms.functional import to_tensor
 from infinity.utils.dynamic_resolution import dynamic_resolution_h_w, h_div_w_templates
 
+from torch.profiler import profile, schedule, tensorboard_trace_handler, ProfilerActivity
+trace_handler = tensorboard_trace_handler(dir_name=f"outputs/profile", use_gzip=False)
 
 def extract_key_val(text):
     pattern = r'<(.+?):(.+?)>'
@@ -51,7 +42,7 @@ def encode_prompt(text_tokenizer, text_encoder, prompt, enable_positive_prompt=F
         print(f'before positive_prompt aug: {prompt}')
         prompt = aug_with_positive_prompt(prompt)
         print(f'after positive_prompt aug: {prompt}')
-    print(f'prompt={prompt}')
+    #print(f'prompt={prompt}')
     captions = [prompt]
     tokens = text_tokenizer(text=captions, max_length=512, padding='max_length', truncation=True, return_tensors='pt')  # todo: put this into dataset
     input_ids = tokens.input_ids.cuda(non_blocking=True)
@@ -85,13 +76,14 @@ def enhance_image(image):
         color_image = color_enhancer.enhance(1.05)  # 增强饱和度
     return color_image
 
+COST, INFI_COST = [], []
+
 def gen_one_img(
     infinity_test, 
     vae, 
     text_tokenizer,
     text_encoder,
     prompt, 
-    category=None,
     cfg_list=[],
     tau_list=[],
     negative_prompt='',
@@ -124,25 +116,22 @@ def gen_one_img(
         negative_label_B_or_BLT = encode_prompt(text_tokenizer, text_encoder, negative_prompt)
     else:
         negative_label_B_or_BLT = None
-    print(f'cfg: {cfg_list}, tau: {tau_list}')
+    # print(f'cfg: {cfg_list}, tau: {tau_list}')
     # with profile(
-    # #activities = [ProfilerActivity.CPU, ProfilerActivity.CUDA],
-    # #activities = [ProfilerActivity.CUDA],
-    # # schedule = tracing_schedule,
-    # on_trace_ready = trace_handler,
-    # profile_memory = True,
-    # record_shapes = True,
-    # with_stack = True
-    # ) as prof:
-    # if category == 'macro_closeup':
-    #     cupy.cuda.profiler.start()
-    #     cupy.cuda.nvtx.RangePush("autoregressive_infer_cfg")
+    #   #activities = [ProfilerActivity.CPU, ProfilerActivity.CUDA],
+    #   #activities = [ProfilerActivity.CUDA],
+    #   # schedule = tracing_schedule,
+    #   on_trace_ready = trace_handler,
+    #   profile_memory = True,
+    #   record_shapes = True,
+    #   with_stack = True
+    # ) as prof, torch.cuda.amp.autocast(enabled=True, dtype=torch.bfloat16, cache_enabled=True):
+    # get_torch_mem_usage()
     with torch.cuda.amp.autocast(enabled=True, dtype=torch.bfloat16, cache_enabled=True):
         stt = time.time()
-        _, _, img_list = infinity_test.autoregressive_infer_cfg(
+        record_codes, _, img_list = infinity_test.autoregressive_infer_cfg(
             vae=vae,
             scale_schedule=scale_schedule,
-            category=category,
             label_B_or_BLT=text_cond_tuple, g_seed=g_seed,
             B=1, negative_label_B_or_BLT=negative_label_B_or_BLT, force_gt_Bhw=None,
             cfg_sc=cfg_sc, cfg_list=cfg_list, tau_list=tau_list, top_k=top_k, top_p=top_p,
@@ -157,13 +146,12 @@ def gen_one_img(
             ratio_list = ratio_list,
             kv_opt = kv_opt
         )
-    
-    # if category == 'macro_closeup':
-    #     cupy.cuda.nvtx.RangePop()
-    #     cupy.cuda.profiler.stop()
-    print(f"cost: {time.time() - sstt}, infinity cost={time.time() - stt}")
+    end = time.time()
+    COST.append(end - sstt)
+    INFI_COST.append(end - stt)
+    #get_torch_mem_usage()
     img = img_list[0]
-    return img
+    return img, record_codes
 
 def get_prompt_id(prompt):
     md5 = hashlib.md5()
@@ -251,6 +239,7 @@ def load_infinity(
         elif checkpoint_type == 'torch_shard':
             from transformers.modeling_utils import load_sharded_checkpoint
             load_sharded_checkpoint(infinity_test, model_path, strict=False)
+            #infinity_test.to(torch.bfloat16)
         infinity_test.rng = torch.Generator(device=device)
         return infinity_test
 
@@ -451,7 +440,7 @@ if __name__ == '__main__':
                 gt_ls_Bl=None,
                 cfg_list=args.cfg,
                 tau_list=args.tau,
-                scale_schedule=scale_schedule[:-2],
+                scale_schedule=scale_schedule,
                 cfg_insertion_layer=[args.cfg_insertion_layer],
                 vae_type=args.vae_type,
                 sampling_per_bits=args.sampling_per_bits,

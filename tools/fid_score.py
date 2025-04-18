@@ -247,12 +247,21 @@ def compute_statistics_of_path(path, model, batch_size, dims, device, max_sample
             m, s = f['mu'][:], f['sigma'][:]
     else:
         path = pathlib.Path(path)
-        files = sorted([file for ext in IMAGE_EXTENSIONS
-                       for file in path.glob('*.{}'.format(ext))])
+        # Modified to include subfolders recursively
+        files = []
+        for ext in IMAGE_EXTENSIONS:
+            # Get files in current directory
+            files.extend(sorted(path.glob(f'*.{ext}')))
+            # Get files in all subdirectories recursively
+            files.extend(sorted(path.glob(f'**/*.{ext}')))
+        
+        # Remove duplicates that might occur from the two glob patterns
+        files = sorted(set(files))
+        
         if len(files) > max_samples:
-            print(f'Restrict to {len(files)} to {max_samples} images')
+            print(f'Restricting from {len(files)} to {max_samples} images')
             files = files[:max_samples]
-        print(f'{path} has {len(files)} images')
+        print(f'{path} has {len(files)} images (including subfolders)')
         m, s = calculate_activation_statistics(files, model, batch_size,
                                                dims, device, num_workers)
 
