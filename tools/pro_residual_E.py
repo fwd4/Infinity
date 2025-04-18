@@ -474,7 +474,7 @@ def batch_analyze_tensors(tensor_path, output_folder, num_batches=20, example_pi
         raise ValueError(f"加载的张量形状不正确，期望形状为[N, 5, 32, 64, 64]，实际为{orin_tensor.shape}")  
     base_name = os.path.basename(tensor_path)  # 获取文件基本名称  
     name_without_extension = base_name.split('.')[0]  # 去掉扩展名  
-    pdf_filename = f'{output_folder}/{name_without_extension}_comb_all_batches.pdf'  # 创建完整的 PDF 文件名  
+    pdf_filename = f'{output_folder}/{name_without_extension}_E_comb_all_batches.pdf'  # 创建完整的 PDF 文件名  
     
     # 创建一个PDF文件用于保存所有批次的图像  
     # pdf_filename = f'{output_folder}/{os.path.basename(tensor_path).split('.')[0]}_comb_all_batches.pdf'  
@@ -529,13 +529,15 @@ def batch_analyze_tensors(tensor_path, output_folder, num_batches=20, example_pi
 
 if __name__ == "__main__":  
     # 数据路径和输出文件夹  
-    tensor_path = '/home/Infinity/animals.pkl'  
-    output_folder = "resi_contri"  
-    
-    # 运行批处理分析  
-    batch_analyze_tensors(  
-        tensor_path=tensor_path,  
-        output_folder=output_folder,  
-        num_batches=200,  # 只处理前20个批次  
-        example_pixel=(32, 32)  # 默认示例像素  
-    )  
+    folder_path = '/home/lianyaoxiu/lianyaoxiu/fwd4/Infinity/output/infinity_2b_evaluation/mjhq30k_raw/pred'
+    output_folder = "resi_contri_E"  
+    for file_name in os.listdir(folder_path):
+        if file_name.endswith('.pkl'):
+            tensor_path = os.path.join(folder_path, file_name)
+            # 运行批处理分析
+            batch_analyze_tensors(
+                tensor_path=tensor_path,
+                output_folder=output_folder,
+                num_batches=200,  # 只处理前200个批次
+                example_pixel=(32, 32)  # 默认示例像素
+            ) 
