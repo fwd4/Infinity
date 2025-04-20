@@ -1,5 +1,5 @@
 import os  
-os.environ["CUDA_VISIBLE_DEVICES"] = "2"  
+os.environ["CUDA_VISIBLE_DEVICES"] = "3"  
 import random
 import os
 import os.path as osp
@@ -86,6 +86,25 @@ args=argparse.Namespace(
 )
 '''
 
+def set_random_seed(seed):  
+    # 设置Python内置模块的随机种子  
+    random.seed(seed)  
+    
+    # 设置NumPy的随机种子  
+    np.random.seed(seed)  
+    
+    # 设置PyTorch的随机种子  
+    torch.manual_seed(seed)  
+    
+    # 如果使用GPU，设置CUDA的随机种子  
+    if torch.cuda.is_available():  
+        torch.cuda.manual_seed(seed)  
+        torch.cuda.manual_seed_all(seed)  # 可能多个GPU  
+    
+    # 设置cuDNN的确定性模式（如果使用cuDNN）  
+    torch.backends.cudnn.deterministic = True  
+    torch.backends.cudnn.benchmark = False  
+
 # LOAD
 text_tokenizer, text_encoder = load_tokenizer(t5_path=args.text_encoder_ckpt)
 get_torch_mem_usage()
@@ -141,7 +160,7 @@ prompts = {
     # "blueberry_simple": "Fresh blueberries on a white background."  
 }
 # OUTPUT
-output_dir = f"./outputs/pics_mtp/mtp_{args.si_para}" 
+output_dir = f"./outputs/pics_rope/mtp_{args.si_para}" 
 os.makedirs(output_dir, exist_ok=True)
 
 img_cnt = 0
@@ -150,8 +169,7 @@ for category, prompt in prompts.items():
     cfg = 3
     tau = 0.5
     h_div_w = 1/1 # Aspect Ratio
-    #seed = random.randint(0, 10000)
-    seed = 42
+    seed = 24
     enable_positive_prompt = 0
 
     h_div_w_template_ = h_div_w_templates[np.argmin(np.abs(h_div_w_templates-h_div_w))]
@@ -219,7 +237,7 @@ for category, prompt in prompts.items():
     #     exit(0)
 
     # SAVE
-    save_pic = False
+    save_pic = True
     if save_pic:
         save_path = osp.join(output_dir, f"{category}_mtp_{args.si_para}_{args.ratio_list}_{args.kv_opt}.jpg")
         cv2.imwrite(save_path, generated_image.cpu().numpy())

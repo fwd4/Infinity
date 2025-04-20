@@ -850,7 +850,7 @@ class Infinity(nn.Module):
         save_para_codes = False
         with open('skip_list.pkl', 'rb') as f:
             skip_list = pickle.load(f)
-        profile = True
+        profile = False
 
         # 用于存储每个scale的codes和summed_codes
         # si_para = 9
