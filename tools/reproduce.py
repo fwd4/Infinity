@@ -49,8 +49,8 @@ args = argparse.Namespace(
     bf16=1,
     save_file='tmp.jpg',
     enable_model_cache=0,
-    si_para = 8,
-    ratio_list = [50,30,15,5],
+    si_para = 9,
+    ratio_list = [50,15,5],
     kv_opt = None
 
 )
@@ -215,11 +215,11 @@ for category, prompt in prompts.items():
     )
 
     # img_cnt+=1
-    # if img_cnt == 1:
+    # if img_cnt == 3:
     #     exit(0)
 
     # SAVE
-    save_pic = True
+    save_pic = False
     if save_pic:
         save_path = osp.join(output_dir, f"{category}_mtp_{args.si_para}_{args.ratio_list}_{args.kv_opt}.jpg")
         cv2.imwrite(save_path, generated_image.cpu().numpy())

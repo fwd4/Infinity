@@ -21,7 +21,7 @@ import numpy as np
 
 import infinity.utils.dist as dist
 from infinity.utils.dist import for_visualize
-from infinity.models.basic import flash_attn_func, flash_fused_op_installed, AdaLNBeforeHead, CrossAttnBlock, SelfAttnBlock, CrossAttention, FastRMSNorm, precompute_rope2d_freqs_grid
+from infinity.models.basic import flash_attn_func, flash_fused_op_installed, AdaLNBeforeHead, CrossAttnBlock, SelfAttnBlock, CrossAttention, FastRMSNorm, precompute_rope2d_freqs_grid,rotary_emb, apply_rotary
 from infinity.utils import misc
 from infinity.models.flex_attn import FlexAttn
 from infinity.utils.dynamic_resolution import dynamic_resolution_h_w, h_div_w_templates
@@ -860,7 +860,7 @@ class Infinity(nn.Module):
         test_partial_list = []
         test_partial_list0 = []  
         mask_list = None
-
+        rope2d_freqs_grid = self.rope2d_freqs_grid[str(tuple(scale_schedule))].to(last_stage.device)
         for si, pn in enumerate(scale_schedule):   # si: i-th segment
             # if si>=11:
             #     break
@@ -882,7 +882,8 @@ class Infinity(nn.Module):
                 if profile:
                     torch.cuda.synchronize()
                     t1 = time.time() * 1e3
-
+                rope_cache = rotary_emb(mask_list, scale_schedule, rope2d_freqs_grid, si)
+                
                 layer_idx = 0    
                 for block_idx, b in enumerate(self.block_chunks):
                     if self.add_lvl_embeding_only_first_block and block_idx == 0:
@@ -895,7 +896,7 @@ class Infinity(nn.Module):
                     for ii, m in enumerate(b.module):
                         block_number = block_idx * 4 + ii
                         current_stage = last_stage.clone()
-                        last_stage = m(x=last_stage, mask_id = mask_list, cond_BD=cond_BD_or_gss, ca_kv=ca_kv, attn_bias_or_two_vector=None, attn_fn=attn_fn, scale_schedule=scale_schedule, rope2d_freqs_grid=self.rope2d_freqs_grid, scale_ind=si, si_para=si_para, kv_opt=kv_opt)
+                        last_stage = m(x=last_stage, mask_id = mask_list, cond_BD=cond_BD_or_gss, ca_kv=ca_kv, attn_bias_or_two_vector=None, attn_fn=attn_fn, scale_schedule=scale_schedule, rope2d_freqs_grid=rope_cache, scale_ind=si, si_para=si_para, kv_opt=kv_opt)
                         partial_codes_data[si].append(last_stage)
 
                         if compute_loss:
@@ -1005,7 +1006,7 @@ class Infinity(nn.Module):
                 
                 mask_list = get_freq(last_stage_list,pn_list,ratio_list)                 
                 com_last_stage = process_and_concat_last_stage(last_stage_list, mask_list)   #[B,com_pruned_seq_len,d] #[1,com_pruned_seq_len,32]
-
+                rope_cache = rotary_emb(mask_list, scale_schedule, rope2d_freqs_grid, scale_list)
                 ######################### 2.2 #############################            
                 com_last_stage = self.word_embed(self.norm0_ve(com_last_stage))
                 com_last_stage = com_last_stage.repeat(bs//B, 1, 1)
@@ -1028,7 +1029,7 @@ class Infinity(nn.Module):
                         block_number = block_idx * 4 + ii
                         current_stage = com_last_stage.clone()
                         com_last_stage = m(x=com_last_stage, mask_id = mask_list, cond_BD=cond_BD_or_gss, ca_kv=ca_kv, attn_bias_or_two_vector=None, attn_fn=attn_fn, scale_schedule=scale_schedule,
-                                               rope2d_freqs_grid=self.rope2d_freqs_grid, scale_ind = scale_list, si_para=si_para, kv_opt=kv_opt)
+                                               rope2d_freqs_grid=rope_cache, scale_ind = scale_list, si_para=si_para, kv_opt=kv_opt)
                         partial_codes_data[si].append(com_last_stage)
 
                         if compute_loss:
