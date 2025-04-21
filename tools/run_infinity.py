@@ -13,6 +13,7 @@ import re
 import cv2
 import numpy as np
 import torch
+import yaml
 torch._dynamo.config.cache_size_limit=64
 import pandas as pd
 from transformers import AutoTokenizer, T5EncoderModel, T5TokenizerFast
@@ -28,6 +29,34 @@ from infinity.utils.dynamic_resolution import dynamic_resolution_h_w, h_div_w_te
 
 from torch.profiler import profile, schedule, tensorboard_trace_handler, ProfilerActivity
 trace_handler = tensorboard_trace_handler(dir_name=f"outputs/profile", use_gzip=False)
+
+# 添加加载YAML配置的函数
+def load_yaml_config(yaml_path):
+    if not osp.exists(yaml_path):
+        print(f"配置文件 {yaml_path} 不存在，将使用默认参数")
+        return {}
+    
+    with open(yaml_path, 'r', encoding='utf-8') as f:
+        config = yaml.safe_load(f)
+    return config
+
+def load_config(default_config_path, custom_config_path):
+    config = load_yaml_config(default_config_path)
+    # 如果指定了覆盖配置文件，则加载并合并
+    if custom_config_path and os.path.exists(custom_config_path):
+        override_config = load_yaml_config(custom_config_path)
+        # 递归合并配置
+        def merge_configs(base, override):
+            for key, value in override.items():
+                if isinstance(value, dict) and key in base and isinstance(base[key], dict):
+                    merge_configs(base[key], value)
+                else:
+                    base[key] = value
+
+        merge_configs(config, override_config)
+        print(f"已加载覆盖配置: {merge_configs}")
+    return config
+
 
 def extract_key_val(text):
     pattern = r'<(.+?):(.+?)>'
@@ -111,6 +140,8 @@ def gen_one_img(
         cfg_list = [cfg_list] * len(scale_schedule)
     if not isinstance(tau_list, list):
         tau_list = [tau_list] * len(scale_schedule)
+    if not isinstance(cfg_insertion_layer, list):
+        cfg_insertion_layer=[cfg_insertion_layer]
     text_cond_tuple = encode_prompt(text_tokenizer, text_encoder, prompt, enable_positive_prompt)
     if negative_prompt:
         negative_label_B_or_BLT = encode_prompt(text_tokenizer, text_encoder, negative_prompt)
@@ -125,9 +156,9 @@ def gen_one_img(
     #   profile_memory = True,
     #   record_shapes = True,
     #   with_stack = True
-    # ) as prof, torch.cuda.amp.autocast(enabled=True, dtype=torch.bfloat16, cache_enabled=True):
+    # ) as prof, torch.amp.autocast('cuda',enabled=True, dtype=torch.bfloat16, cache_enabled=True):
     # get_torch_mem_usage()
-    with torch.cuda.amp.autocast(enabled=True, dtype=torch.bfloat16, cache_enabled=True):
+    with torch.amp.autocast('cuda',enabled=True, dtype=torch.bfloat16, cache_enabled=True):
         stt = time.time()
         record_codes, _, img_list = infinity_test.autoregressive_infer_cfg(
             vae=vae,
@@ -201,7 +232,7 @@ def load_infinity(
 ):
     print(f'[Loading Infinity]')
     text_maxlen = 512
-    with torch.cuda.amp.autocast(enabled=True, dtype=torch.bfloat16, cache_enabled=True), torch.no_grad():
+    with torch.amp.autocast('cuda',enabled=True, dtype=torch.bfloat16, cache_enabled=True), torch.no_grad():
         infinity_test: Infinity = Infinity(
             vae_local=vae, text_channels=text_channels, text_maxlen=text_maxlen,
             shared_aln=True, raw_scale_schedule=scale_schedule,

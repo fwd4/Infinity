@@ -516,7 +516,7 @@ class SelfAttnBlock(nn.Module):
         
     # NOTE: attn_bias_or_two_vector is None during inference
     def forward(self, x, cond_BD, ca_kv, attn_bias_or_two_vector):  # todo: minGPT and vqgan also uses pre-norm, just like this, while MaskGiT uses post-norm
-        with torch.cuda.amp.autocast(enabled=False):
+        with torch.amp.autocast('cuda',enabled=False):
             if self.shared_aln: # always True;                   (1, 1, 6, C)  + (B, 1, 6, C)
                 gamma1, gamma2, scale1, scale2, shift1, shift2 = (self.ada_gss + cond_BD).unbind(2) # 116C + B16C =unbind(2)=> 6 B1C
             else:
@@ -576,7 +576,7 @@ class CrossAttnBlock(nn.Module):
     # NOTE: attn_bias_or_two_vector is None during inference
     def forward(self, x, mask_id, cond_BD, ca_kv, attn_bias_or_two_vector, attn_fn=None, scale_schedule=None, rope2d_freqs_grid=None, scale_ind=0 ,si_para=0,kv_opt=None):    # todo: minGPT and vqgan also uses pre-norm, just like this, while MaskGiT uses post-norm
         #tt0 = time.time()
-        with torch.cuda.amp.autocast(enabled=False):    # disable half precision
+        with torch.amp.autocast('cuda',enabled=False):    # disable half precision
             if self.shared_aln: # always True;                   (1, 1, 6, C)  + (B, 1, 6, C)
                 gamma1, gamma2, scale1, scale2, shift1, shift2 = (self.ada_gss + cond_BD).unbind(2) # 116C + B16C =unbind(2)=> 6 B1C
             else:

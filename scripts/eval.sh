@@ -126,40 +126,64 @@ test_fid() {
     # ${pip_ext} install pytorch_fid
 
     # step 1, infer images
-    ${python_ext} tools/comprehensive_infer.py \
-    --cfg ${cfg} \
-    --tau ${tau} \
-    --pn ${pn} \
-    --model_path ${infinity_model_path} \
-    --vae_type ${vae_type} \
-    --vae_path ${vae_path} \
-    --add_lvl_embeding_only_first_block ${add_lvl_embeding_only_first_block} \
-    --use_bit_label ${use_bit_label} \
-    --model_type ${model_type} \
-    --rope2d_each_sa_layer ${rope2d_each_sa_layer} \
-    --rope2d_normalized_by_hw ${rope2d_normalized_by_hw} \
-    --use_scale_schedule_embedding ${use_scale_schedule_embedding} \
-    --cfg ${cfg} \
-    --tau ${tau} \
-    --checkpoint_type ${checkpoint_type} \
-    --text_encoder_ckpt ${text_encoder_ckpt} \
-    --text_channels ${text_channels} \
-    --apply_spatial_patchify ${apply_spatial_patchify} \
-    --cfg_insertion_layer ${cfg_insertion_layer} \
-    --coco30k_prompts 0 \
-    --save4fid_eval 1 \
-    --use_flex_attn ${use_flex_attn} \
-    --jsonl_filepath ${jsonl_filepath} \
-    --long_caption_fid ${long_caption_fid} \
-    --out_dir  ${out_dir} \
-    --si_para ${si_para}\
-    --ratio_list ${ratio_list}\
-    --kv_opt ${kv_opt}
+    # ${python_ext} tools/comprehensive_infer.py \
+    # --cfg ${cfg} \
+    # --tau ${tau} \
+    # --pn ${pn} \
+    # --model_path ${infinity_model_path} \
+    # --vae_type ${vae_type} \
+    # --vae_path ${vae_path} \
+    # --add_lvl_embeding_only_first_block ${add_lvl_embeding_only_first_block} \
+    # --use_bit_label ${use_bit_label} \
+    # --model_type ${model_type} \
+    # --rope2d_each_sa_layer ${rope2d_each_sa_layer} \
+    # --rope2d_normalized_by_hw ${rope2d_normalized_by_hw} \
+    # --use_scale_schedule_embedding ${use_scale_schedule_embedding} \
+    # --cfg ${cfg} \
+    # --tau ${tau} \
+    # --checkpoint_type ${checkpoint_type} \
+    # --text_encoder_ckpt ${text_encoder_ckpt} \
+    # --text_channels ${text_channels} \
+    # --apply_spatial_patchify ${apply_spatial_patchify} \
+    # --cfg_insertion_layer ${cfg_insertion_layer} \
+    # --coco30k_prompts 0 \
+    # --save4fid_eval 1 \
+    # --use_flex_attn ${use_flex_attn} \
+    # --jsonl_filepath ${jsonl_filepath} \
+    # --long_caption_fid ${long_caption_fid} \
+    # --out_dir  ${out_dir} \
+    # --si_para ${si_para}\
+    # --ratio_list ${ratio_list}\
+    # --kv_opt ${kv_opt}
 
-    # step 2, compute fid
-    ${python_ext} tools/fid_score.py \
-    ${out_dir}/pred \
-    ${out_dir}/gt | tee ${out_dir}/log.txt
+    # step 2, compute fid for multiple category pairs
+    echo "Computing FID scores for all category pairs..."
+    out_dir="output/infinity_2b_evaluation/mjhq30k_raw"
+    mkdir -p ${out_dir}/fid_results
+    
+    # Find all category subfolders in pred directory
+    categories=$(find ${out_dir}/pred -mindepth 1 -maxdepth 1 -type d -printf "%f\n")
+    
+    # Loop through each category and compute FID
+    for category in ${categories}; do
+        if [ -d "${out_dir}/pred/${category}" ]; then
+            echo "Computing FID for category: ${category}"
+            ${python_ext} tools/fid_score.py \
+            ${out_dir}/pred/${category} \
+            data/mjhq30k/${category} > ${out_dir}/fid_results/${category}_fid.txt
+            
+            # Print the result
+            echo "Category: ${category}"
+            cat ${out_dir}/fid_results/${category}_fid.txt
+            echo "----------------------------------------"
+        else
+            echo "Warning: Missing directory for category ${out_dir}/pred/${category}"
+        fi
+    done
+    
+    # Combine all results into a single log file
+    cat ${out_dir}/fid_results/*.txt > ${out_dir}/fid_results/all_fid_results.txt
+    echo "All FID results saved to ${out_dir}/fid_results/all_fid_results.txt"
 }
 
 test_val_loss() {

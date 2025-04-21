@@ -759,7 +759,7 @@ class Infinity(nn.Module):
         verbose=False,
         si_para = 9,
         ratio_list = [50,10,5],
-        kv_opt=None
+        kv_opt = False,
     ):   # returns List[idx_Bl]
         # tt0 = time.time() * 1e3
 
@@ -1172,7 +1172,9 @@ class Infinity(nn.Module):
         img = img.permute(0, 2, 3, 1).mul_(255).to(torch.uint8).flip(dims=(3,))
         # print(f"pre: {tt1 - tt0:.2f}ms, backbone: {tt2-tt1:.2f}ms, post{tt3 - tt2:.2f}ms")
         #ATTN_TIME.append(backbone_time)
-        return record_codes.reshape(1, 5, 32, 64, 64), idx_Bl_list, img
+        if record_codes:
+            record_codes.reshape(1, 5, 32, 64, 64)
+        return record_codes, idx_Bl_list, img
     
     @for_visualize
     def vis_key_params(self, ep):
