@@ -37,6 +37,8 @@ except ImportError:
 
 
 scores_ = []
+rope_triton = True
+
 
 def precompute_rope2d_freqs_grid(dim, dynamic_resolution_h_w, rope2d_normalized_by_hw, pad_to_multiplier=1, max_height=2048 // 16, max_width=2048 // 16, base=10000.0, device=None, scaling_factor=1.0):
     # split the dimension into half, one for x and one for y
@@ -95,6 +97,53 @@ def precompute_rope2d_freqs_grid(dim, dynamic_resolution_h_w, rope2d_normalized_
             rope2d_freqs_grid[str(tuple(tmp_scale_schedule))] = cat_rope_cache
     return rope2d_freqs_grid
 
+def rotary_emb(mask_id, scale_schedule, rope2d_freqs_grid, scale_ind):
+    start = 0
+    if isinstance(scale_ind, list):
+        start_list = [np.sum([item[0] * item[1] * item[2] for item in scale_schedule[:ind]]) for ind in scale_ind]
+    else:
+        scale_value = scale_schedule[scale_ind]  
+        seq_len = scale_value[1] * scale_value[2] 
+        if scale_ind >= 1:
+            assert len(scale_schedule[0]) == 3
+            start = np.sum([item[0] * item[1] * item[2] for item in scale_schedule[:scale_ind]])
+
+    if mask_id ==  None:
+        rope_cache = rope2d_freqs_grid[:, :, :, :, start:start+seq_len]
+    else:
+        indices = torch.tensor([start_list[i] + id_val for i in range(len(mask_id)) for id_val in mask_id[i]]).to(rope2d_freqs_grid.device)             
+        # 使用高效的索引选择操作  
+        rope_cache = torch.index_select(  
+            rope2d_freqs_grid,   
+            dim=4,   
+            index=indices.view(-1)  
+        )     #(2, 1, 1, 1, seq_len, half_dim)
+        # rope_cache_list = []
+        # for i in range(len(mask_id)):
+        #     rope_cache = rope2d_freqs_grid[:, :, :, :, start_list[i] + mask_id[i]]
+        #     rope_cache_list.append(rope_cache)
+        # rope_cache = torch.cat(rope_cache_list, dim=4)  # Concatenate along the sequence length dimension  
+
+    return rope_cache
+
+def apply_rotary(q, k, rope_cache, using_flash=False):
+    if using_flash:
+        q = q.transpose(1, 2)   #(B:batch_size, L:seq_len, H:heads, c:head_dim) --> (B,H,L,C)
+        k = k.transpose(1, 2)
+    qk = torch.stack((q, k), dim=0)  #(2, batch_size, heads, seq_len, head_dim)
+    device_type = qk.device.type
+    device_type = device_type if isinstance(device_type, str) and device_type != "mps" else "cpu"
+    qk = qk.reshape(*qk.shape[:-1], -1, 2) #(2, batch_size, heads, seq_len, half_head_dim, 2)
+    qk = torch.stack([
+        rope_cache[0] * qk[...,0] - rope_cache[1] * qk[...,1],
+        rope_cache[1] * qk[...,0] + rope_cache[0] * qk[...,1],
+    ], dim=-1) # (2, batch_size, heads, seq_len, half_head_dim, 2), here stack + reshape should not be concate
+    qk = qk.reshape(*qk.shape[:-2], -1) #(2, batch_size, heads, seq_len, head_dim)
+    q, k = qk.unbind(dim=0) # (batch_size, heads, seq_len, head_dim)
+    if using_flash:
+        q = q.transpose(1, 2)
+        k = k.transpose(1, 2)
+    return q, k
 
 def apply_rotary_emb(q, k, mask_id, scale_schedule, rope2d_freqs_grid, pad_to_multiplier, rope2d_normalized_by_hw, scale_ind, using_flash=False):
     if using_flash:
@@ -321,8 +370,15 @@ class SelfAttention(nn.Module):
             v = v.contiguous()      # bf16
 
         if rope2d_freqs_grid is not None:
-            q, k = apply_rotary_emb(q, k, mask_id, scale_schedule, rope2d_freqs_grid, self.pad_to_multiplier, self.rope2d_normalized_by_hw, scale_ind, self.using_flash) #, freqs_cis=freqs_cis)
-            #q_, k_ = apply_rotary_emb(q_, k_, scale_schedule, rope2d_freqs_grid, self.pad_to_multiplier, self.rope2d_normalized_by_hw, scale_ind, 1) #, freqs_cis=freqs_cis)
+            if rope_triton == True:
+                from .rope_triton import apply_rotary_triton
+                q, k = apply_rotary_triton(q, k, rope2d_freqs_grid, self.using_flash) #, freqs_cis=freqs_cis)
+            else:
+                q, k = apply_rotary(q, k, rope2d_freqs_grid, self.using_flash) #, freqs_cis=freqs_cis)
+                
+        # if rope2d_freqs_grid is not None:
+        #     q, k = apply_rotary_emb(q, k, mask_id, scale_schedule, rope2d_freqs_grid, self.pad_to_multiplier, self.rope2d_normalized_by_hw, scale_ind, self.using_flash) #, freqs_cis=freqs_cis)
+        #     #q_, k_ = apply_rotary_emb(q_, k_, scale_schedule, rope2d_freqs_grid, self.pad_to_multiplier, self.rope2d_normalized_by_hw, scale_ind, 1) #, freqs_cis=freqs_cis)
         if self.caching:    # kv caching: only used during inference
             if not isinstance(scale_ind, list):
                 if kv_opt !=  0:

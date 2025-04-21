@@ -134,7 +134,7 @@ if __name__ == '__main__':
                 scale_schedule = dynamic_resolution_h_w[h_div_w_template][args.pn]['scales']
                 scale_schedule = [(1, h, w) for (_, h, w) in scale_schedule]
                 tgt_h, tgt_w = dynamic_resolution_h_w[h_div_w_template][args.pn]['pixel']
-                image = gen_one_img(infinity, vae, text_tokenizer, text_encoder, prompt, tau_list=tau, cfg_sc=3, cfg_list=cfg, scale_schedule=scale_schedule, cfg_insertion_layer=[args.cfg_insertion_layer], 
+                image,_ = gen_one_img(infinity, vae, text_tokenizer, text_encoder, prompt, tau_list=tau, cfg_sc=3, cfg_list=cfg, scale_schedule=scale_schedule, cfg_insertion_layer=[args.cfg_insertion_layer], 
                                     vae_type=args.vae_type, si_para = args.si_para, ratio_list = ratio_list, kv_opt = args.kv_opt)
             else:
                 raise ValueError

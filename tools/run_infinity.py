@@ -29,6 +29,7 @@ from infinity.utils.dynamic_resolution import dynamic_resolution_h_w, h_div_w_te
 
 from torch.profiler import profile, schedule, tensorboard_trace_handler, ProfilerActivity
 trace_handler = tensorboard_trace_handler(dir_name=f"outputs/profile", use_gzip=False)
+import ast
 
 # 添加加载YAML配置的函数
 def load_yaml_config(yaml_path):
