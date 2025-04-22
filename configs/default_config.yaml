@@ -30,7 +30,7 @@ gen_kwargs:
   gt_leak: 0
   gt_ls_Bl: null
   cfg_list: 4
-  tau_list: 0.5
+  tau_list: 1
   enable_positive_prompt: 0
   verbose: false
   h_div_w: 1.0

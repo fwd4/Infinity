@@ -84,32 +84,10 @@ test_gen_eval() {
     # ${pip_ext} install httpx==0.20.0
 
     # run inference
-    ${python_ext} evaluation/gen_eval/infer4eval.py \
-    --cfg ${cfg} \
-    --tau ${tau} \
-    --pn ${pn} \
-    --model_path ${infinity_model_path} \
-    --vae_type ${vae_type} \
-    --vae_path ${vae_path} \
-    --add_lvl_embeding_only_first_block ${add_lvl_embeding_only_first_block} \
-    --use_bit_label ${use_bit_label} \
-    --model_type ${model_type} \
-    --rope2d_each_sa_layer ${rope2d_each_sa_layer} \
-    --rope2d_normalized_by_hw ${rope2d_normalized_by_hw} \
-    --use_scale_schedule_embedding ${use_scale_schedule_embedding} \
-    --cfg ${cfg} \
-    --tau ${tau} \
-    --use_flex_attn ${use_flex_attn} \
-    --checkpoint_type ${checkpoint_type} \
-    --text_encoder_ckpt ${text_encoder_ckpt} \
-    --text_channels ${text_channels} \
-    --apply_spatial_patchify ${apply_spatial_patchify} \
-    --cfg_insertion_layer ${cfg_insertion_layer} \
+    torchrun --nproc_per_node=4 \
+    evaluation/gen_eval/infer4eval.py \
     --outdir ${out_dir}/images \
-    --rewrite_prompt ${rewrite_prompt}\
-    --si_para ${si_para}\
-    --ratio_list ${ratio_list}\
-    --kv_opt ${kv_opt}
+    --rewrite_prompt ${rewrite_prompt}
 
     # detect objects
     ${python_ext} evaluation/gen_eval/evaluate_images.py ${out_dir}/images \
@@ -225,16 +203,16 @@ model_type=infinity_2b
 use_scale_schedule_embedding=0
 use_bit_label=1
 checkpoint_type='torch'
-infinity_model_path=/home/model_data/infinity_2b_reg.pth
+infinity_model_path=weights/infinity_2b_reg.pth
 out_dir_root=output/infinity_2b_evaluation
 vae_type=32
-vae_path=/home/model_data/infinity_vae_d32reg.pth
+vae_path=weights/infinity_vae_d32reg.pth
 cfg=4
 tau=1
 rope2d_normalized_by_hw=2
 add_lvl_embeding_only_first_block=1
 rope2d_each_sa_layer=1
-text_encoder_ckpt=/home/model_data/flan-t5-xl
+text_encoder_ckpt=weights/flan-t5-xl
 text_channels=2048
 apply_spatial_patchify=0
 cfg_insertion_layer=0
@@ -260,25 +238,21 @@ case $task in
     image_reward)
         out_dir="${out_dir_root}/image_reward_${sub_fix}_flex_attn${use_flex_attn}_prefix${prefix}"
         infer_eval_image_reward
-        break
         ;;
     hpsv21)
         out_dir="${out_dir_root}/hpsv21_${sub_fix}_flex_attn${use_flex_attn}_prefix${prefix}"
         infer_eval_hpsv21
-        break
         ;;
     gen_eval)
         rewrite_prompt=2
-        out_dir="${out_dir_root}/gen_eval_${sub_fix}_rewrite_prompt${rewrite_prompt}_flex_attn${use_flex_attn}_round2_real_rewrite_prefix${prefix}"
+        out_dir="${out_dir_root}/gen_eval_${sub_fix}_rewrite_prompt${rewrite_prompt}_mtp_prune_input0_testtststststs"
         test_gen_eval
-        break
         ;;
     mjhq30k_fid)
         long_caption_fid=1
         jsonl_filepath='data/mjhq30k/meta_data.json'
         out_dir="${out_dir_root}/val_mjhq30k_fid_${sub_fix}_flex_attn${use_flex_attn}_si_para${si_para}_ratio${ratio_list}_kvopt${kv_opt}"
         test_fid
-        break
         ;;
     val_loss)
         out_dir="${out_dir_root}/val_loss_${sub_fix}_rewrite_prompt${rewrite_prompt}"
@@ -286,7 +260,6 @@ case $task in
         jsonl_folder='[YOUR VAL JSONL FILEPATH]'
         noise_apply_strength=0.2
         test_val_loss
-        break
         ;;
     *)
         echo "Error: Unknown task '$task'"
