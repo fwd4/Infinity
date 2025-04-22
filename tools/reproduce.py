@@ -234,9 +234,9 @@ for category, prompt in prompts.items():
         verbose=False,
     )
 
-    # img_cnt+=1
-    # if img_cnt == 1:
-    #     exit(0)
+    img_cnt+=1
+    if img_cnt == 2:
+        exit(0)
 
     # SAVE
     save_pic = False
