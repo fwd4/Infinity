@@ -725,7 +725,7 @@ class Infinity(nn.Module):
         profile = True
 
         # 用于存储每个scale的codes和summed_codes
-        si_para = 9
+        si_para = 11
         codes_data = {si: [] for si in range(len(scale_schedule))}
         summed_codes_data = {si: [] for si in range(len(scale_schedule))}
         partial_codes_data = {si: [] for si in range(len(scale_schedule))}
@@ -865,87 +865,48 @@ class Infinity(nn.Module):
                     torch.cuda.synchronize()
                     t0 = time.time() * 1e3
                 last_stage = F.interpolate(summed_codes_para, size=vae_scale_schedule[si], mode=vae.quantizer.z_interplote_up) # [B, d, 1, h, w] or [B, d, 1, 2h, 2w]
-                if si == 10:
-                    _,_,mask_minus = get_freq(last_stage,pn[1])                    
-                    ######################### 2.1 #############################    
-                    last_stage = last_stage.squeeze(-3) # [B, d, h, w] or [B, d, 2h, 2w]
-                    if self.apply_spatial_patchify: # patchify operation
-                        last_stage = torch.nn.functional.pixel_unshuffle(last_stage, 2) # [B, 4d, h, w]
-                    last_stage = last_stage.reshape(*last_stage.shape[:2], -1) # [B, d, h*w] or [B, 4d, h*w]
-                    last_stage = torch.permute(last_stage, [0,2,1]) # [B, h*w, d] or [B, h*w, 4d]
-                    ######################### 2.1 #############################
 
-                if si == 11:
-                    _,mask_minus,_ = get_freq(last_stage,pn[1])                    
-                    ######################### 2.1 #############################    
-                    last_stage = last_stage.squeeze(-3) # [B, d, h, w] or [B, d, 2h, 2w]
-                    if self.apply_spatial_patchify: # patchify operation
-                        last_stage = torch.nn.functional.pixel_unshuffle(last_stage, 2) # [B, 4d, h, w]
-                    last_stage = last_stage.reshape(*last_stage.shape[:2], -1) # [B, d, h*w] or [B, 4d, h*w]
-                    last_stage = torch.permute(last_stage, [0,2,1]) # [B, h*w, d] or [B, h*w, 4d]
-                    ######################### 2.1 #############################
 
-                if si == 12:
-                    mask_minus,_,_ = get_freq(last_stage,pn[1])                    
-                    ######################### 2.1 #############################    
-                    last_stage = last_stage.squeeze(-3) # [B, d, h, w] or [B, d, 2h, 2w]
-                    if self.apply_spatial_patchify: # patchify operation
-                        last_stage = torch.nn.functional.pixel_unshuffle(last_stage, 2) # [B, 4d, h, w]
-                    last_stage = last_stage.reshape(*last_stage.shape[:2], -1) # [B, d, h*w] or [B, 4d, h*w]
-                    last_stage = torch.permute(last_stage, [0,2,1]) # [B, h*w, d] or [B, h*w, 4d]
-                    ######################### 2.1 #############################
+                # mask_minus,_,_ = get_freq(last_stage,pn[1])                    
+                ######################### 2.1 #############################    
+                last_stage = last_stage.squeeze(-3) # [B, d, h, w] or [B, d, 2h, 2w]
+
+                last_stage = last_stage.reshape(*last_stage.shape[:2], -1) # [B, d, h*w] or [B, 4d, h*w]
+                last_stage = torch.permute(last_stage, [0,2,1]) # [B, h*w, d] or [B, h*w, 4d]
+                ######################### 2.1 #############################
 
                 ######################### 2.2 #############################            
                 codes_data[si].append(codes.cpu().numpy())
                 summed_codes_data[si].append(summed_codes.cpu().numpy())
                 last_stage = self.word_embed(self.norm0_ve(last_stage))
                 last_stage = last_stage.repeat(bs//B, 1, 1)
-                last_stage_gather = last_stage[:, mask_minus, :]
+                # last_stage_gather = last_stage[:, mask_minus, :]
                 ######################### 2.2 #############################
                 layer_idx = 0
-                if profile:
-                    torch.cuda.synchronize()
-                    t1 = time.time() * 1e3
-                for block_idx, b in enumerate(self.block_chunks):
-                    if self.add_lvl_embeding_only_first_block and block_idx == 0:
-                        last_stage_gather = self.add_lvl_embeding(last_stage_gather, si, scale_schedule, need_to_pad=need_to_pad)
-                        partial_codes_data[si].append(last_stage_gather)
-                    if not self.add_lvl_embeding_only_first_block: 
-                        last_stage_gather = self.add_lvl_embeding(last_stage_gather, si, scale_schedule, need_to_pad=need_to_pad)
-                        partial_codes_data[si].append(last_stage_gather)
 
-                    for ii, m in enumerate(b.module):
-                        block_number = block_idx * 4 + ii
-                        current_stage = last_stage_gather.clone()
-                        last_stage_gather = m(x=last_stage_gather, si = si, mask_id = mask_minus, cond_BD=cond_BD_or_gss, ca_kv=ca_kv, attn_bias_or_two_vector=None, attn_fn=attn_fn, scale_schedule=scale_schedule, rope2d_freqs_grid=self.rope2d_freqs_grid, scale_ind=si)
-                        partial_codes_data[si].append(last_stage_gather)
+                for target_size in range(1, 1001, 1):  # 逐步增加 target_size
+                    mask_minus = torch.arange(target_size, device=last_stage.device, dtype=torch.long)  # 直接赋值 mask_minus
+                    last_stage_gather = last_stage[:, mask_minus, :]  # 更新 last_stage_gather 的 shape
 
-                        if compute_loss:
-                            if loss_func == 'MSE':                    
-                                mse = F.mse_loss(current_stage, last_stage)
-                                loss = mse.item()
-                            elif loss_func == 'relative_diff':
-                                diff = (last_stage - current_stage).abs().reshape(-1,last_stage.shape[-1])  
-                                sim = diff.sum()/last_stage.abs().sum()
-                                loss = sim
-                            elif loss_func == 'cosine_similarity':
-                                similarity = cosine_similarity(current_stage[0], last_stage[0])
-                                loss = similarity   
-                            elif loss_func == 'diff_ratio':
-                                diff = (last_stage - current_stage).abs().reshape(-1,last_stage.shape[-1])  
-                                loss = compute_diff_ratio(last_stage.abs().reshape(-1,last_stage.shape[-1]), diff)     
+                    if profile:
+                        torch.cuda.synchronize()
+                        t1 = time.time() * 1e3
+                    for block_idx, b in enumerate(self.block_chunks):
+                        if self.add_lvl_embeding_only_first_block and block_idx == 0:
+                            last_stage_gather = self.add_lvl_embeding(last_stage_gather, si, scale_schedule, need_to_pad=need_to_pad)
+                            partial_codes_data[si].append(last_stage_gather)
+                        if not self.add_lvl_embeding_only_first_block: 
+                            last_stage_gather = self.add_lvl_embeding(last_stage_gather, si, scale_schedule, need_to_pad=need_to_pad)
 
-                            loss_data[si].append(loss)
-
-                        if (cfg != 1) and (layer_idx in abs_cfg_insertion_layers):
-                            last_stage_gather = cfg * last_stage_gather[:B] + (1-cfg) * last_stage_gather[B:]
-                            last_stage_gather = torch.cat((last_stage_gather, last_stage_gather), 0)
-                            layer_idx += 1                
-
-                
-                if profile:
-                    torch.cuda.synchronize()
-                    t2 = time.time() * 1e3
+                        for ii, m in enumerate(b.module):
+                            block_number = block_idx * 4 + ii
+                            current_stage = last_stage_gather.clone()
+                            last_stage_gather = m(x=last_stage_gather, si = si, mask_id = mask_minus, cond_BD=cond_BD_or_gss, ca_kv=ca_kv, attn_bias_or_two_vector=None, attn_fn=attn_fn, scale_schedule=scale_schedule, rope2d_freqs_grid=self.rope2d_freqs_grid, scale_ind=si)
+                                  
+                    if profile:
+                        torch.cuda.synchronize()
+                        t2 = time.time() * 1e3
+                    print(f"mask size {target_size}, stage {si}, 32block {t2 - t1:.2f}ms")
                 ######################### 1 #############################
                 # last_stage = last_stage.to(torch.float32) 
                 # last_stage = torch.zeros(last_stage.shape, device = last_stage.device).to(torch.float32)  
