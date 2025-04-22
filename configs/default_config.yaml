@@ -44,6 +44,7 @@ gen_kwargs:
   g_seed: 42
   sampling_per_bits: 1
   kv_opt: 0
+  prune_inputs: false
   si_para: 12
   ratio_list: []
 

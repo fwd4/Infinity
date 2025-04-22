@@ -6,5 +6,6 @@ init_args:
   root_folder: '/workspace/Infinity'
 
 gen_kwargs:
+  prune_inputs: true
   si_para: 9
   ratio_list: [50, 15, 5]

@@ -62,10 +62,10 @@ def get_freq_old(codes, pn, ratio1):
     return tuple(masks)  
 
 # top(lb) - top(ub)
-def get_freq_with_lb_ub(code, pn, lb, ub):
-    flatten_sum = code.reshape(-1, pn, pn)
-    dc_component = F.avg_pool2d(flatten_sum, pn)
-    dc_diff = torch.norm(flatten_sum - dc_component, dim=0).flatten()
+def get_freq_with_lb_ub(code, lb, ub):
+    # codes: [1, pn*pn, d]
+    dc_component = torch.mean(code, dim=1, keepdim=True)
+    dc_diff = torch.norm(code - dc_component, dim=2).flatten()
     total_sz = dc_diff.numel()
     # 获取 top_high 和 top_low 的索引
     top_high_indices = torch.topk(dc_diff, total_sz * lb // 100, largest=True, sorted=False).indices
@@ -80,19 +80,18 @@ def get_freq_with_lb_ub(code, pn, lb, ub):
 
 
 
-def get_freq(codes_list, pn_list, ratio_list):
+def get_freq(codes_list, ratio_list):
     """
     计算每个 last_stage_list 中的 top 比例索引，并返回对应的 mask_list。
 
     参数:
-        codes_list: List[Tensor], 每个 Tensor 的形状为 [B, d, h, w]
-        pn_list: List[int], 每个对应的分辨率 pn
+        codes_list: List[Tensor], 每个 Tensor 的形状为 [1, h*w, d]
         ratio_list: List[int], 每个对应的比例，例如 [50, 30, 10, 5]
 
     返回:
         mask_list: List[Tensor], 每个 Tensor 包含对应比例的索引
     """
-    assert len(codes_list) == len(pn_list) == len(ratio_list), "codes_list, pn_list 和 ratio_list 的长度必须相同"
+    assert len(codes_list)== len(ratio_list), "codes_list, pn_list 和 ratio_list 的长度必须相同"
     lb = []
     ub = []
     if type(ratio_list[0]) is list:
@@ -106,45 +105,44 @@ def get_freq(codes_list, pn_list, ratio_list):
     mask_list = []  # 用于存储每个比例的 mask
     device = codes_list[0].device  # 假设所有张量都在同一个设备上
 
-    for codes, pn, l, u in zip(codes_list, pn_list, lb, ub):
-        # 计算当前比例的 top 索引范围
-        # high_ratio = ratio
-        # low_ratio = ratio_list[ratio_list.index(ratio) + 1] if ratio_list.index(ratio) + 1 < len(ratio_list) else 0
-        mask = get_freq_with_lb_ub(codes, pn, l, u)
-        # 将 mask 添加到 mask_list
+    for codes, l, u in zip(codes_list, lb, ub):
+        mask = get_freq_with_lb_ub(codes, l, u)
         mask_list.append(mask)
 
     return mask_list
 
-def process_and_concat_last_stage(last_stage_list, mask_list):
+def get_para_stage_inputs(summed_codes, last_stage, vae, vae_scale_schedule, apply_spatial_patchify):
+    """
+    For paralle stages, use summed_codes of last sequential stage and interpolate to
+    each correspoinding scale.
+    """
+    para_stages = [last_stage]
+    for schedule in vae_scale_schedule[1:]:
+        para_stage = F.interpolate(summed_codes, schedule, mode=vae.quantizer.z_interplote_up)
+        para_stage = para_stage.squeeze(-3) # [B, d, h, w] or [B, d, 2h, 2w]
+        if apply_spatial_patchify:
+            para_stage = torch.nn.functional.pixel_shuffle(para_stage, 2)  # [B, 4d, h, w]
+        para_stage = para_stage.reshape(*para_stage.shape[:2], -1) # [B, d, h*w] or [B, 4d, h*w]
+        para_stage = torch.permute(para_stage, [0,2,1]) # [B, h*w, d] or [B, h*w, 4d]
+        para_stages.append(para_stage)
+    return para_stages
+
+def process_and_concat_last_stage(codes_list, mask_list):
     """
     处理 last_stage_list 中的每个张量，按照指定步骤操作，并拼接成一个新的张量。
 
     参数:
-        last_stage_list: List[Tensor], 每个张量的形状为 [B, d, 1, h, w]
+        last_stage_list: List[Tensor], 每个张量的形状为 [1, h*w, d]
         mask_list: List[Tensor], 每个张量包含对应的索引
 
     返回:
-        new_last_stage: Tensor, 拼接后的新张量，形状为 [B, total_mask_len, d]
+        new_last_stage: Tensor, 拼接后的新张量，形状为 [1, total_mask_len, d]
     """
     processed_list = []  # 用于存储处理后的张量
+    for code, mask in zip(codes_list, mask_list):
+        masked_code = code[:, mask, :]
+        processed_list.append(masked_code)
 
-    for last_stage, mask in zip(last_stage_list, mask_list):
-        # 1. squeeze(-3) -> [B, d, h, w]
-        last_stage = last_stage.squeeze(-3)
-
-        # 2. reshape -> [B, d, h*w]
-        B, d, h, w = last_stage.shape
-        last_stage = last_stage.reshape(B, d, h * w)
-
-        # 3. 根据 mask 取对应的索引 -> [B, d, mask_len]
-        last_stage = last_stage[:, :, mask]
-
-        # 4. 转置为 [B, mask_len, d] 并添加到列表
-        last_stage = last_stage.permute(0, 2, 1)  # [B, mask_len, d]
-        processed_list.append(last_stage)
-
-    # 5. 拼接所有处理后的张量 -> [B, total_mask_len, d]
     new_last_stage = torch.cat(processed_list, dim=1)
 
     return new_last_stage
@@ -769,6 +767,7 @@ class Infinity(nn.Module):
         si_para = 9,
         ratio_list = [50,10,5],
         kv_opt = False,
+        **kwargs
     ):   # returns List[idx_Bl]
         # tt0 = time.time() * 1e3
 
@@ -942,7 +941,6 @@ class Infinity(nn.Module):
                 t2 = time.time() * 1e3
             
             codes = stage_to_codes(last_stage, cond_BD).view(1, vae_type, 1, pn[1], pn[2])
-
      
             ######################### 1 #############################
             if si != num_stages_minus_1:
@@ -955,18 +953,18 @@ class Infinity(nn.Module):
                 if self.apply_spatial_patchify: # patchify operation
                     last_stage = torch.nn.functional.pixel_unshuffle(last_stage, 2) # [B, 4d, h, w]
                 last_stage = last_stage.reshape(*last_stage.shape[:2], -1) # [B, d, h*w] or [B, 4d, h*w]
-                last_stage = torch.permute(last_stage, [0,2,1]) # [B, h*w, d] or [B, h*w, 4d]
+                last_stage_reshape = torch.permute(last_stage, [0,2,1]) # [B, h*w, d] or [B, h*w, 4d]
             else:
-                residual = codes.clone()
+                residual = codes
                 summed_codes += codes
 
-            # record_codes.append(residual)
+            record_codes.append(residual)
             ######################### 2.1 #############################
 
             ######################### 2.2 #############################            
 
             if si != num_stages_minus_1:
-                last_stage = self.word_embed(self.norm0_ve(last_stage))
+                last_stage = self.word_embed(self.norm0_ve(last_stage_reshape))
                 last_stage = last_stage.repeat(bs//B, 1, 1)
             ######################### 2.2 #############################
 
@@ -984,45 +982,82 @@ class Infinity(nn.Module):
             if profile:
                 torch.cuda.synchronize()
                 t0 = time.time() * 1e3
-            last_stage_list = []
-            pn_list = []
-            scale_list = [i for i in range(si_para+1, num_stages_minus_1+1)]
-            for i in range(n_seq_stages,num_stages_minus_1+1,1):
-                last_stage = F.interpolate(summed_codes, size=vae_scale_schedule[i], mode=vae.quantizer.z_interplote_up) # [B, d, 1, h, w] or [B, d, 1, 2h, 2w]
-                last_stage_list.append(last_stage)
-                pn_list.append(scale_schedule[i][1])
+
+            para_stage_inputs = get_para_stage_inputs(summed_codes,
+                                                      last_stage_reshape,
+                                                      vae,
+                                                      vae_scale_schedule[n_seq_stages:],
+                                                      self.apply_spatial_patchify)
+            scale_list = list(range(si_para+1, len(scale_schedule)))
+            pn_list = [pn[1] for pn in scale_schedule[n_seq_stages:]]
+            mask_list = get_freq(para_stage_inputs, ratio_list)                 
+            # prune input tokens
+            if kwargs['prune_inputs']:
+                com_last_stage = process_and_concat_last_stage(para_stage_inputs, mask_list)   #[B,com_pruned_seq_len,d] #[1,com_pruned_seq_len,32]
+
+                # ######################### 2.2 #############################            
+                com_last_stage = self.word_embed(self.norm0_ve(com_last_stage))
+                com_last_stage = com_last_stage.repeat(bs//B, 1, 1)
+                ######################### 2.2 #############################
+                layer_idx = 0
+                rope_cache = rotary_emb(mask_list, scale_schedule, rope2d_freqs_grid, scale_list)
+                if profile:
+                    torch.cuda.synchronize()
+                    t1 = time.time() * 1e3
         
-            mask_list = get_freq(last_stage_list,pn_list,ratio_list)                 
-            com_last_stage = process_and_concat_last_stage(last_stage_list, mask_list)   #[B,com_pruned_seq_len,d] #[1,com_pruned_seq_len,32]
 
-            ######################### 2.2 #############################            
-            com_last_stage = self.word_embed(self.norm0_ve(com_last_stage))
-            com_last_stage = com_last_stage.repeat(bs//B, 1, 1)
-            ######################### 2.2 #############################
-            layer_idx = 0
-            rope_cache = rotary_emb(mask_list, scale_schedule, rope2d_freqs_grid, scale_list)
-            if profile:
-                torch.cuda.synchronize()
-                t1 = time.time() * 1e3
-        
+                for block_idx, b in enumerate(self.block_chunks):
+                    if self.add_lvl_embeding_only_first_block and block_idx == 0:
+                        com_last_stage = self.add_lvl_embeding(com_last_stage, mask_list, scale_list, scale_schedule, need_to_pad=need_to_pad)
+                    if not self.add_lvl_embeding_only_first_block: 
+                        com_last_stage = self.add_lvl_embeding(com_last_stage, mask_list, scale_list,scale_schedule, need_to_pad=need_to_pad)
 
-            for block_idx, b in enumerate(self.block_chunks):
-                if self.add_lvl_embeding_only_first_block and block_idx == 0:
-                    com_last_stage = self.add_lvl_embeding(com_last_stage, mask_list, scale_list, scale_schedule, need_to_pad=need_to_pad)
-                if not self.add_lvl_embeding_only_first_block: 
-                    com_last_stage = self.add_lvl_embeding(com_last_stage, mask_list, scale_list,scale_schedule, need_to_pad=need_to_pad)
+                    for ii, m in enumerate(b.module):
+                        block_number = block_idx * 4 + ii
+                        com_last_stage = m(x=com_last_stage, mask_id = mask_list, cond_BD=cond_BD_or_gss, ca_kv=ca_kv, attn_bias_or_two_vector=None, attn_fn=attn_fn, scale_schedule=scale_schedule,
+                                               rope2d_freqs_grid=rope_cache, scale_ind = scale_list, si_para=si_para, kv_opt=kv_opt)
 
-                for ii, m in enumerate(b.module):
-                    block_number = block_idx * 4 + ii
-                    com_last_stage = m(x=com_last_stage, mask_id = mask_list, cond_BD=cond_BD_or_gss, ca_kv=ca_kv, attn_bias_or_two_vector=None, attn_fn=attn_fn, scale_schedule=scale_schedule,
-                                           rope2d_freqs_grid=rope_cache, scale_ind = scale_list, si_para=si_para, kv_opt=kv_opt)
+                        if (cfg != 1) and (layer_idx in abs_cfg_insertion_layers):
+                            last_stage_gather = cfg * last_stage_gather[:B] + (1-cfg) * last_stage_gather[B:]
+                            last_stage_gather = torch.cat((last_stage_gather, last_stage_gather), 0)
+                            layer_idx += 1                
+            else: # prune output tokens only
+                com_last_stage = None
 
-                    if (cfg != 1) and (layer_idx in abs_cfg_insertion_layers):
-                        last_stage_gather = cfg * last_stage_gather[:B] + (1-cfg) * last_stage_gather[B:]
-                        last_stage_gather = torch.cat((last_stage_gather, last_stage_gather), 0)
-                        layer_idx += 1                
+                rope_cache = rotary_emb(None, scale_schedule, rope2d_freqs_grid, si)
+                for i, pn in enumerate(scale_schedule[n_seq_stages:]):   # si: i-th segment
+                    stage_input = self.word_embed(self.norm0_ve(para_stage_inputs[i]))
+                    stage_input = stage_input.repeat(bs//B, 1, 1)
+                    output_mask = mask_list[i]
+                    si = i + n_seq_stages
+                    cfg = cfg_list[si]
+                    cur_L += np.array(pn).prod()
+                    need_to_pad = 0
+                    layer_idx = 0
+                    for block_idx, b in enumerate(self.block_chunks):
+                        if self.add_lvl_embeding_only_first_block and block_idx == 0:
+                            para_stage = self.add_lvl_embeding(stage_input, None, si, scale_schedule, need_to_pad=need_to_pad)
+                        if not self.add_lvl_embeding_only_first_block:
+                            para_stage = self.add_lvl_embeding(stage_input, None, si, scale_schedule, need_to_pad=need_to_pad)
 
-        
+                        for ii, m in enumerate(b.module):
+                            block_number = block_idx * 4 + ii
+                            para_stage = m(x=para_stage, mask_id = None, cond_BD=cond_BD_or_gss, ca_kv=ca_kv, attn_bias_or_two_vector=None, attn_fn=attn_fn, scale_schedule=scale_schedule,
+                                           rope2d_freqs_grid=rope_cache, scale_ind=si, si_para=si_para, kv_opt=kv_opt)
+                            if (cfg!= 1) and (layer_idx in abs_cfg_insertion_layers):
+                                para_stage = cfg * para_stage[:B] + (1-cfg) * para_stage[B:]
+                                para_stage = torch.cat((para_stage, para_stage), 0)
+                                layer_idx += 1
+                    if profile:
+                        torch.cuda.synchronize()
+                        t2 = time.time() * 1e3
+                    if com_last_stage is None:
+                        com_last_stage = para_stage[:, output_mask, :]
+                    else:
+                        com_last_stage = torch.cat((com_last_stage, para_stage[:, output_mask, :]), dim=1)
+
+
+            codes_list = [] 
             if profile:
                 torch.cuda.synchronize()
                 t2 = time.time() * 1e3
@@ -1032,7 +1067,6 @@ class Infinity(nn.Module):
             ######################### 1 #############################
 
             ################## padding 1.1 ##########################
-            codes_list = []
             for i in range(len(pn_list)):
                 codes_ = torch.zeros([B,32,1,pn_list[i]**2], device = codes.device,dtype=codes.dtype)
                 codes_list.append(codes_)

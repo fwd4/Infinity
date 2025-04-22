@@ -135,6 +135,7 @@ def gen_one_img(
     si_para = None,
     ratio_list = None,
     kv_opt = 0,
+    **kwargs
 ):
     sstt = time.time()
     if not isinstance(cfg_list, list):
@@ -176,7 +177,8 @@ def gen_one_img(
             verbose=verbose,
             si_para = si_para,
             ratio_list = ratio_list,
-            kv_opt = kv_opt
+            kv_opt = kv_opt,
+            **kwargs
         )
     end = time.time()
     COST.append(end - sstt)
