@@ -535,6 +535,7 @@ class Infinity(nn.Module):
         
         num_stages_minus_1 = len(scale_schedule)-1
         summed_codes = 0
+        record_codes = [last_stage]
         for si, pn in enumerate(scale_schedule):   # si: i-th segment
             cfg = cfg_list[si]
             if si >= trunk_scale:
@@ -596,6 +597,7 @@ class Infinity(nn.Module):
                 idx_Bld_list.append(idx_Bld)
                 codes = vae.quantizer.lfq.indices_to_codes(idx_Bld, label_type='bit_label') # [B, d, 1, h, w] or [B, d, 1, 2h, 2w]
                 if si != num_stages_minus_1:
+                    residual = F.interpolate(codes, size=vae_scale_schedule[-1], mode=vae.quantizer.z_interplote_up) 
                     summed_codes += F.interpolate(codes, size=vae_scale_schedule[-1], mode=vae.quantizer.z_interplote_up)
                     last_stage = F.interpolate(summed_codes, size=vae_scale_schedule[si+1], mode=vae.quantizer.z_interplote_up) # [B, d, 1, h, w] or [B, d, 1, 2h, 2w]
                     last_stage = last_stage.squeeze(-3) # [B, d, h, w] or [B, d, 2h, 2w]
@@ -604,7 +606,9 @@ class Infinity(nn.Module):
                     last_stage = last_stage.reshape(*last_stage.shape[:2], -1) # [B, d, h*w] or [B, 4d, h*w]
                     last_stage = torch.permute(last_stage, [0,2,1]) # [B, h*w, d] or [B, h*w, 4d]
                 else:
+                    residual = codes
                     summed_codes += codes
+                record_codes.append(residual)
             else:
                 if si < gt_leak:
                     idx_Bl = gt_ls_Bl[si]
@@ -620,6 +624,8 @@ class Infinity(nn.Module):
             if si != num_stages_minus_1:
                 last_stage = self.word_embed(self.norm0_ve(last_stage))
                 last_stage = last_stage.repeat(bs//B, 1, 1)
+        
+        torch.save(record_codes, "tensor_origin.pkl")
 
         if inference_mode:
             for b in self.unregistered_blocks: (b.sa if isinstance(b, CrossAttnBlock) else b.attn).kv_caching(False)

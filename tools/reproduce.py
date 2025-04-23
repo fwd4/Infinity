@@ -46,18 +46,18 @@ infinity = load_transformer(vae, args)
 # PROMPT
 prompts = {
     "vintage_insect": "Insect made from vintage 1960s electronic components, capacitors, resistors, transistors, wires, diodes, solder, circuitboard.",
-    "macro_closeup": "Denis Villeneuve's extreme macro cinematographic close-up in water.",
-    "3d_school": "A creative 3D image to be placed at the bottom of a mobile application's homepage, depicting a miniature school and children carrying backpacks.",
-    "explore_more": "Create an image with 'Explore More' in an adventurous font over a picturesque hiking trail.",
-    "toy_car": "Close-up shot of a diecast toy car, diorama, night, lights from windows, bokeh, snow.",
-    "fairy_house": "House: white; pink tinted windows; surrounded by flowers; cute; scenic; garden; fairy-like; epic; photography; photorealistic; insanely detailed and intricate; textures; grain; ultra-realistic.",
-    "cat_fashion": "Hyperrealistic black and white photography of cats fashion show in style of Helmut Newton.",
-    "spacefrog_astroduck": "Two superheroes called Spacefrog (a dashing green cartoon-like frog with a red cape) and Astroduck (a yellow fuzzy duck, part-robot, with blue/grey armor), near a garden pond, next to their spaceship, a classic flying saucer, called the Tadpole 3000. Photorealistic.",
-    "miniature_village": "An enchanted miniature village bustling with activity, featuring tiny houses, markets, and residents.",
-    "corgi_dog": "A close-up photograph of a Corgi dog. The dog is wearing a black hat and round, dark sunglasses. The Corgi has a joyful expression, with its mouth open and tongue sticking out, giving an impression of happiness or excitement.",
-    "robot_eggplant": "a robot holding a huge eggplant, sunny nature background",
-    "perfume_product": "Product photography, a perfume placed on a white marble table with pineapple, coconut, lime next to it as decoration, white curtains, full of intricate details, realistic, minimalist, layered gestures in a bright and concise atmosphere, minimalist style.",
-    "mountain_landscape": "The image presents a picturesque mountainous landscape under a cloudy sky. The mountains, blanketed in lush greenery, rise majestically, their slopes dotted with clusters of trees and shrubs. The sky above is a canvas of blue, adorned with fluffy white clouds that add a sense of tranquility to the scene. In the foreground, a valley unfolds, nestled between the towering mountains. It appears to be a rural area, with a few buildings and structures visible, suggesting the presence of a small settlement. The buildings are scattered, blending harmoniously with the natural surroundings. The image is captured from a high vantage point, providing a sweeping view of the valley and the mountains."
+    # "macro_closeup": "Denis Villeneuve's extreme macro cinematographic close-up in water.",
+    # "3d_school": "A creative 3D image to be placed at the bottom of a mobile application's homepage, depicting a miniature school and children carrying backpacks.",
+    # "explore_more": "Create an image with 'Explore More' in an adventurous font over a picturesque hiking trail.",
+    # "toy_car": "Close-up shot of a diecast toy car, diorama, night, lights from windows, bokeh, snow.",
+    # "fairy_house": "House: white; pink tinted windows; surrounded by flowers; cute; scenic; garden; fairy-like; epic; photography; photorealistic; insanely detailed and intricate; textures; grain; ultra-realistic.",
+    # "cat_fashion": "Hyperrealistic black and white photography of cats fashion show in style of Helmut Newton.",
+    # "spacefrog_astroduck": "Two superheroes called Spacefrog (a dashing green cartoon-like frog with a red cape) and Astroduck (a yellow fuzzy duck, part-robot, with blue/grey armor), near a garden pond, next to their spaceship, a classic flying saucer, called the Tadpole 3000. Photorealistic.",
+    # "miniature_village": "An enchanted miniature village bustling with activity, featuring tiny houses, markets, and residents.",
+    # "corgi_dog": "A close-up photograph of a Corgi dog. The dog is wearing a black hat and round, dark sunglasses. The Corgi has a joyful expression, with its mouth open and tongue sticking out, giving an impression of happiness or excitement.",
+    # "robot_eggplant": "a robot holding a huge eggplant, sunny nature background",
+    # "perfume_product": "Product photography, a perfume placed on a white marble table with pineapple, coconut, lime next to it as decoration, white curtains, full of intricate details, realistic, minimalist, layered gestures in a bright and concise atmosphere, minimalist style.",
+    # "mountain_landscape": "The image presents a picturesque mountainous landscape under a cloudy sky. The mountains, blanketed in lush greenery, rise majestically, their slopes dotted with clusters of trees and shrubs. The sky above is a canvas of blue, adorned with fluffy white clouds that add a sense of tranquility to the scene. In the foreground, a valley unfolds, nestled between the towering mountains. It appears to be a rural area, with a few buildings and structures visible, suggesting the presence of a small settlement. The buildings are scattered, blending harmoniously with the natural surroundings. The image is captured from a high vantage point, providing a sweeping view of the valley and the mountains."
 }
 
 # OUTPUT
@@ -66,10 +66,10 @@ os.makedirs(output_dir, exist_ok=True)
 
 # GEN IMG
 for category, prompt in prompts.items():
-    cfg = 3
-    tau = 0.5
+    cfg = 4
+    tau = 1
     h_div_w = 1/1 # Aspect Ratio
-    seed = random.randint(0, 10000)
+    seed = 0 #random.randint(0, 10000)
     enable_positive_prompt = 0
 
     h_div_w_template_ = h_div_w_templates[np.argmin(np.abs(h_div_w_templates-h_div_w))]
