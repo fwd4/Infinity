@@ -240,7 +240,7 @@ apply_spatial_patchify=0
 cfg_insertion_layer=0
 sub_fix=cfg${cfg}_tau${tau}_cfg_insertion_layer${cfg_insertion_layer}
 use_flex_attn=0
-si_para=8
+si_para=12
 ratio_list='[50,30,15,5]'
 kv_opt=0
 prefix=1497
@@ -269,7 +269,7 @@ case $task in
         ;;
     gen_eval)
         rewrite_prompt=2
-        out_dir="${out_dir_root}/gen_eval_${sub_fix}_rewrite_prompt${rewrite_prompt}_flex_attn${use_flex_attn}_round2_real_rewrite_prefix${prefix}"
+        out_dir="${out_dir_root}/gen_eval_${sub_fix}_rewrite_prompt${rewrite_prompt}_flex_attn${use_flex_attn}_round2_real_rewrite_prefix${prefix}_si_para${si_para}_ratio${ratio_list}_rope"
         test_gen_eval
         break
         ;;
