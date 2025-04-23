@@ -6,6 +6,8 @@ import cv2
 import numpy as np
 from run_infinity import *
 
+from pytorch_lightning import seed_everything
+
 torch.cuda.set_device(0)
 model_path = '/workspace/Infinity/weights/infinity_2b_reg.pth'
 vae_path = '/workspace/Infinity/weights/infinity_vae_d32reg.pth'
@@ -69,12 +71,14 @@ for category, prompt in prompts.items():
     cfg = 4
     tau = 1
     h_div_w = 1/1 # Aspect Ratio
-    seed = 0 #random.randint(0, 10000)
     enable_positive_prompt = 0
 
     h_div_w_template_ = h_div_w_templates[np.argmin(np.abs(h_div_w_templates-h_div_w))]
     scale_schedule = dynamic_resolution_h_w[h_div_w_template_][args.pn]['scales']
     scale_schedule = [(1, h, w) for (_, h, w) in scale_schedule]
+
+    seed_everything(0)
+    seed = 0 #random.randint(0, 10000)
 
     # GEN
     generated_image = gen_one_img(
