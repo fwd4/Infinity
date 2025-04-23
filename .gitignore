@@ -45,6 +45,7 @@ checkpoints
 ref.py
 wandb
 .DS_Store
+*.pkl
 
 infi_scores/
 conf.py

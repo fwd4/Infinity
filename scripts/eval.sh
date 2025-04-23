@@ -84,7 +84,7 @@ test_gen_eval() {
     # ${pip_ext} install httpx==0.20.0
 
     # run inference
-    torchrun --nproc_per_node=8 \
+    torchrun --nproc_per_node=${nproc_per_node} \
     evaluation/gen_eval/infer4eval.py \
     --outdir ${out_dir}/images \
     --rewrite_prompt ${rewrite_prompt}
@@ -225,14 +225,18 @@ prefix=1497
 
 
 # 参数校验
-if [ $# -eq 0 ]; then
-    echo "Usage: $0 [task_name]"
+if [ $# -lt 1 ]; then
+    echo "Usage: $0 [task_name] [nproc_per_node]"
     echo "Available tasks:"
     echo "  image_reward, hpsv21, gen_eval, mjhq30k_fid, val_loss"
+    echo "Optional:"
+    echo "  nproc_per_node: Number of processes per node (default: 8)"
     exit 1
 fi
 
 task=$1
+# Get nproc_per_node from command line argument, default to 8 if not provided
+nproc_per_node=${2:-8}
 
 case $task in
     image_reward)

@@ -192,7 +192,6 @@ if __name__ == '__main__':
         # 计算全局索引
         global_index = start_idx + index if is_distributed else index
         
-        seed_everything(args.seed)  # 每个提示使用不同的种子
         outpath = os.path.join(args.outdir, f"{global_index:0>5}")
         os.makedirs(outpath, exist_ok=True)
         prompt = metadata['prompt']
@@ -241,7 +240,8 @@ if __name__ == '__main__':
                 h_div_w = gen_kwargs.get('h_div_w', 1.0)
                 scale_schedule = prepare_scale_schedule(h_div_w, args.pn)
                 gen_kwargs['scale_schedule'] = scale_schedule
-                gen_kwargs['g_seed'] = None
+                seed_everything(args.seed + sample_j)  # 每个提示使用不同的种子
+                gen_kwargs['g_seed'] = args.seed + sample_j
                 
                 image, _ = gen_one_img(infinity, vae, text_tokenizer, text_encoder, prompt, **gen_kwargs)
             else:

@@ -5,13 +5,13 @@ import os.path as osp
 import cv2
 import numpy as np
 from run_infinity import *
-from infinity.models.basic import scores_
 from tqdm import tqdm
 import datetime
 import yaml
 import argparse
 import torch.distributed as dist
 import torch.multiprocessing as mp
+from pytorch_lightning import seed_everything
 
 
 def load_yaml_config(yaml_path):
@@ -146,9 +146,9 @@ def generate_images(infinity, vae, text_tokenizer, text_encoder, prompts, gen_kw
     iterations_per_process = (total_iterations + world_size - 1) // world_size
     
     # 将提示词列表转换为列表，以便分片
-    prompt_items = list(prompts.items())
+    prompt_items = list(prompts.items())[:1]
     # 设置随机种子，确保不同进程生成不同的图像
-    random.seed(rank + int(time.time()))
+    # random.seed(rank + int(time.time()))
     
     with tqdm(total=iterations_per_process, desc=f"GPU {rank} Generating images") as pbar:
         for i in range(iterations_per_process):
@@ -159,10 +159,11 @@ def generate_images(infinity, vae, text_tokenizer, text_encoder, prompts, gen_kw
             category, prompt = prompt_items[global_idx % len(prompt_items)]
             
             # 设置随机种子（每次迭代都不同）
-            gen_kwargs['g_seed'] = random.randint(0, 10000)
+            seed_everything(0)
+            gen_kwargs['g_seed'] = 0 #random.randint(0, 10000)
             
             # 使用**kwargs方式调用gen_one_img
-            generated_image, _ = gen_one_img(
+            generated_image, tensors = gen_one_img(
                 infinity,
                 vae,
                 text_tokenizer,
@@ -171,7 +172,7 @@ def generate_images(infinity, vae, text_tokenizer, text_encoder, prompts, gen_kw
                 **gen_kwargs
             )
 
-            # 保存图像
+            # Save image
             save_path = osp.join(run_dir, f"re_{category}_gpu{rank}_iter{i}.jpg")
             if not osp.exists(save_path):
                 cv2.imwrite(save_path, generated_image.cpu().numpy())
@@ -220,7 +221,7 @@ def main():
     run_dir = setup_output_dir(gen_kwargs, rank, world_size)
     
     # 设置迭代次数
-    total_iterations = config.get('total_iterations', 30)
+    total_iterations = config.get('total_iterations', 1)
     
     # 准备缩放计划
     gen_kwargs['scale_schedule'] = prepare_scale_schedule(gen_kwargs['h_div_w'], args.pn)
