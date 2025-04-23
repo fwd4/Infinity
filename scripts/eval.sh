@@ -84,7 +84,7 @@ test_gen_eval() {
     # ${pip_ext} install httpx==0.20.0
 
     # run inference
-    torchrun --nproc_per_node=4 \
+    torchrun --nproc_per_node=8 \
     evaluation/gen_eval/infer4eval.py \
     --outdir ${out_dir}/images \
     --rewrite_prompt ${rewrite_prompt}
@@ -245,7 +245,7 @@ case $task in
         ;;
     gen_eval)
         rewrite_prompt=2
-        out_dir="${out_dir_root}/gen_eval_${sub_fix}_rewrite_prompt${rewrite_prompt}_mtp_prune_input0_testtststststs"
+        out_dir="${out_dir_root}/gen_eval_${sub_fix}_$(date +%Y%m%d_%H%M%S)"
         test_gen_eval
         ;;
     mjhq30k_fid)

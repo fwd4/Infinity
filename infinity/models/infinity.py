@@ -991,6 +991,7 @@ class Infinity(nn.Module):
             scale_list = list(range(si_para+1, len(scale_schedule)))
             pn_list = [pn[1] for pn in scale_schedule[n_seq_stages:]]
             mask_list = get_freq(para_stage_inputs, ratio_list)                 
+            pfs = kwargs.get("partition_on_full_scale", False)
             # prune input tokens
             if kwargs['prune_inputs']:
                 com_last_stage = process_and_concat_last_stage(para_stage_inputs, mask_list)   #[B,com_pruned_seq_len,d] #[1,com_pruned_seq_len,32]
@@ -1024,6 +1025,10 @@ class Infinity(nn.Module):
             else: # prune output tokens only
                 com_last_stage = None
 
+                if pfs:
+                    optional_input = [para_stage_inputs[-1] for _ in para_stage_inputs]
+                    mask_list = get_freq(optional_input, ratio_list)                 
+
                 rope_cache = rotary_emb(None, scale_schedule, rope2d_freqs_grid, si)
                 for i, pn in enumerate(scale_schedule[n_seq_stages:]):   # si: i-th segment
                     stage_input = self.word_embed(self.norm0_ve(para_stage_inputs[i]))
@@ -1052,9 +1057,11 @@ class Infinity(nn.Module):
                         torch.cuda.synchronize()
                         t2 = time.time() * 1e3
                     if com_last_stage is None:
-                        com_last_stage = para_stage[:, output_mask, :]
+                        com_last_stage = para_stage if pfs else para_stage[:, output_mask, :]
                     else:
-                        com_last_stage = torch.cat((com_last_stage, para_stage[:, output_mask, :]), dim=1)
+                        com_last_stage = torch.cat((com_last_stage, para_stage), dim=1) \
+                                         if pfs else \
+                                         torch.cat((com_last_stage, para_stage[:, output_mask, :]), dim=1) 
 
 
             codes_list = [] 
@@ -1072,16 +1079,27 @@ class Infinity(nn.Module):
                 codes_list.append(codes_)
             start_id = 0
             for idx, (new_codes, mask) in enumerate(zip(codes_list, mask_list)):  
-                # 将 codes 重塑为 [-1, pn, pn]  
-                new_codes[:, :, :, mask] = codes[:, :, :, start_id:start_id + len(mask)]  
-                new_codes = new_codes.reshape(B, 32, 1, pn_list[idx],pn_list[idx])
-                # 检查是否是最后一轮循环  
-                if idx < len(codes_list) - 1:  # 不处理最后一轮  
-                    test_partial_code = F.interpolate(new_codes, size=vae_scale_schedule[-1], mode=vae.quantizer.z_interplote_up)  
-                    test_partial_list.append(test_partial_code)  
+                if not pfs:
+                    # 将 codes 重塑为 [-1, pn, pn]  
+                    new_codes[:, :, :, mask] = codes[:, :, :, start_id:start_id + len(mask)]  
+                    new_codes = new_codes.reshape(B, 32, 1, pn_list[idx],pn_list[idx])
+                    # 检查是否是最后一轮循环  
+                    if idx < len(codes_list) - 1:  # 不处理最后一轮  
+                        test_partial_code = F.interpolate(new_codes, size=vae_scale_schedule[-1], mode=vae.quantizer.z_interplote_up)  
+                        test_partial_list.append(test_partial_code)  
+                    else:
+                        test_partial_list.append(new_codes)
+                    start_id += len(mask)  
                 else:
+                    seq_len = pn_list[idx]**2
+                    new_codes = torch.zeros((B, vae_type, 1, 4096), device=codes.device, dtype=codes.dtype)
+                    if idx < len(codes_list) - 1:
+                        c = codes[:, :, :, start_id:start_id + seq_len].view(*codes.shape[:3], pn_list[idx], pn_list[idx])
+                        c = F.interpolate(c, size=vae_scale_schedule[-1], mode=vae.quantizer.z_interplote_up)
+                    new_codes[:, :, :, mask] = c.view(*codes.shape[:3], -1)[:, :, :, mask]
+                    new_codes = new_codes.view(*codes.shape[:3], pn_list[-1], pn_list[-1])
                     test_partial_list.append(new_codes)
-                start_id += len(mask)  
+                    start_id += seq_len
 
             if profile:
                 torch.cuda.synchronize()

@@ -157,7 +157,7 @@ if __name__ == '__main__':
     gen_kwargs = config.get('gen_kwargs', {}).copy()
 
     with open(args.metadata_file) as fp:
-        metadatas = [json.loads(line) for line in fp][:20]
+        metadatas = [json.loads(line) for line in fp]
     
     # 在分布式环境中，每个进程处理一部分数据
     if is_distributed:
@@ -192,7 +192,7 @@ if __name__ == '__main__':
         # 计算全局索引
         global_index = start_idx + index if is_distributed else index
         
-        seed_everything(args.seed + global_index)  # 每个提示使用不同的种子
+        seed_everything(args.seed)  # 每个提示使用不同的种子
         outpath = os.path.join(args.outdir, f"{global_index:0>5}")
         os.makedirs(outpath, exist_ok=True)
         prompt = metadata['prompt']

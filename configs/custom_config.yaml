@@ -6,6 +6,7 @@ init_args:
   root_folder: '/workspace/Infinity'
 
 gen_kwargs:
-  prune_inputs: true
+  prune_inputs: false
+  partion_on_full_scale: false # if true, analyze on 64x64 summation code, else analyze on per-scale interpolated code
   si_para: 9
   ratio_list: [50, 15, 5]
