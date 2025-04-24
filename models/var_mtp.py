@@ -17,6 +17,55 @@ def get_freq(codes_list, pn_list, ratio_list):
     计算每个 last_stage_list 中的 top 比例索引，并返回对应的 mask_list。
 
     参数:
+        codes_list: List[Tensor], 每个 Tensor 的形状为 [1, h*w, d]
+        ratio_list: List[int], 每个对应的比例，例如 [50, 30, 10, 5]
+
+    返回:
+        mask_list: List[Tensor], 每个 Tensor 包含对应比例的索引
+    """
+    
+    lb = []
+    ub = []
+    if type(ratio_list[0]) is list:
+        lb, ub = ratio_list[0], ratio_list[1]
+        assert len(codes_list)== len(ratio_list[0]), "codes_list, pn_list 和 ratio_list 的长度必须相同"
+    else:
+        # ratio_list: [50, 15, 5] =>
+        # lb: [50, 15, 5]
+        # ub: [15, 5, 0]
+        assert len(codes_list)== len(ratio_list), "codes_list, pn_list 和 ratio_list 的长度必须相同"
+        lb = ratio_list
+        ub = ratio_list[1:] + [0]
+    mask_list = []  # 用于存储每个比例的 mask
+    device = codes_list[0].device  # 假设所有张量都在同一个设备上
+
+    for codes, pn, l, u in zip(codes_list, pn_list, lb, ub):
+        mask = get_freq_with_lb_ub(codes, pn, l, u)
+        mask_list.append(mask)
+
+    return mask_list
+
+def get_freq_with_lb_ub(codes, pn, lb, ub):
+    flatten_sum = codes.view(codes.shape[0], -1, pn, pn) # [B, 32, pn, pn]
+    dc_component = F.avg_pool2d(flatten_sum, kernel_size=pn)  # [B, 32, 1, 1]
+    dc_diff = torch.norm(flatten_sum - dc_component, dim=1).flatten(start_dim=1)  # [B, pn*pn]
+    total_sz = dc_diff.shape[1]
+
+    # 获取 top_high 和 top_low 的索引
+    top_high_indices = torch.topk(dc_diff, total_sz * lb // 100, dim=1, largest=True, sorted=False).indices
+    top_low_indices = torch.topk(dc_diff, total_sz * ub // 100, dim=1, largest=True, sorted=False).indices
+
+    # 计算 mask（高比例减去低比例）
+    mask_set = [set(high.cpu().numpy()) - set(low.cpu().numpy()) for high, low in zip(top_high_indices, top_low_indices)]  #len= B
+    mask = [list(mask_item) for mask_item in mask_set] #len= B
+
+    return mask
+
+def get_freq_old(codes_list, pn_list, ratio_list):
+    """
+    计算每个 last_stage_list 中的 top 比例索引，并返回对应的 mask_list。
+
+    参数:
         codes_list: List[Tensor], 每个 Tensor 的形状为 [B, d, h, w]
         pn_list: List[int], 每个对应的分辨率 pn
         ratio_list: List[int], 每个对应的比例，例如 [50, 30, 10, 5]
@@ -245,8 +294,8 @@ class VAR(nn.Module):
         self, B: int, label_B: Optional[Union[int, torch.LongTensor]],
         g_seed: Optional[int] = None, cfg=1.5, top_k=0, top_p=0.0,
         more_smooth=False,        
-        si_para = 7,
-        ratio_list = [60,20],
+        si_para = 9,
+        ratio_list = [[20],[0]],
         kv_opt=None
     ) -> torch.Tensor:   # returns reconstructed image (B, 3, H, W) in [0, 1]
         
@@ -279,9 +328,13 @@ class VAR(nn.Module):
         cur_L = 0
         f_hat = sos.new_zeros(B, self.Cvae, self.patch_nums[-1], self.patch_nums[-1])  #[8,32,16,16]
         
+        profile = True
         for b in self.blocks: b.attn.kv_caching(True)
         for si, pn in enumerate(self.patch_nums):   # si: i-th segment
             if si <= si_para:
+                if profile:
+                    torch.cuda.synchronize()
+                    t0 = time.time() * 1e3
                 ratio = si / self.num_stages_minus_1   #self.num_stages_minus_1 = 9
                 # last_L = cur_L
                 cur_L += pn*pn
@@ -289,10 +342,18 @@ class VAR(nn.Module):
                 cond_BD_or_gss = self.shared_ada_lin(cond_BD)  #[2B,1024]
                 x = next_token_map  #[2B,1,1024]
                 AdaLNSelfAttn.forward
+
+                if profile:
+                    torch.cuda.synchronize()
+                    t1 = time.time() * 1e3
+
                 for i,b in enumerate(self.blocks):
                     x = b(x=x, cond_BD=cond_BD_or_gss, attn_bias=None)  #torch.Size([2B, 1, 1024])
                 logits_BlV = self.get_logits(x, cond_BD)  #torch.Size([2B, 1, 1024])
                 
+                if profile:
+                    torch.cuda.synchronize()
+                    t2 = time.time() * 1e3
                 t = cfg * ratio
                 logits_BlV = (1+t) * logits_BlV[:B] - t * logits_BlV[B:]  #torch.Size([B, 1, 4096])
                 
@@ -309,10 +370,19 @@ class VAR(nn.Module):
                     next_token_map = next_token_map.view(B, self.Cvae, -1).transpose(1, 2) #[B,pn*pn,32]
                     next_token_map = self.word_embed(next_token_map) + lvl_pos[:, cur_L:cur_L + self.patch_nums[si+1] ** 2]  ##[B,pn*pn,1024]
                     next_token_map = next_token_map.repeat(2, 1, 1)   # double the batch sizes due to CFG  #[2B,pn*pn,1024]
+                if profile:
+                    torch.cuda.synchronize()
+                    t3 = time.time() * 1e3
+                    print(f"stage {si}, {pn}, all {t3 - t0:.2f}ms, {t1 - t0:.2f}ms, 16block {t2 - t1:.2f}ms, {t3 - t2:.2f}ms")  
+            
             if si > si_para:
                 last_stage_list = []
                 pn_list = []
                 si_list = [i for i in range(si, self.num_stages_minus_1+1)]
+                
+                if profile:
+                    torch.cuda.synchronize()
+                    t0 = time.time() * 1e3
 
                 for i in range(si,self.num_stages_minus_1+1,1):
                     last_stage = F.interpolate(f_hat, size=(self.patch_nums[i], self.patch_nums[i]), mode='area') # [B,32,pn[si+1],pn[si+1]]
@@ -329,10 +399,18 @@ class VAR(nn.Module):
                 
                 x = next_token_map
                 AdaLNSelfAttn.forward
+
+                if profile:
+                    torch.cuda.synchronize()
+                    t1 = time.time() * 1e3
                 for i,b in enumerate(self.blocks):
                     x = b(x=x, cond_BD=cond_BD_or_gss, attn_bias=None)  #torch.Size([2B, total_mask_len, 1024])
-                logits_BlV = self.get_logits(x, cond_BD)  #torch.Size([2B, total_mask_len, 1024])
 
+                if profile:
+                    torch.cuda.synchronize()
+                    t2 = time.time() * 1e3
+
+                logits_BlV = self.get_logits(x, cond_BD)  #torch.Size([2B, total_mask_len, 1024])
                 # Calculate ratios for each stage in si_list
                 ratios = [si / self.num_stages_minus_1 for si in si_list]
 
@@ -371,6 +449,10 @@ class VAR(nn.Module):
                     si = si + 1
                     start_id += mask_len  # 更新起始索引  
 
+                if profile:
+                    torch.cuda.synchronize()
+                    t3 = time.time() * 1e3
+                    print(f"stage {si}, {pn}, all {t3 - t0:.2f}ms, {t1 - t0:.2f}ms, 32block {t2 - t1:.2f}ms, {t3 - t2:.2f}ms")
                 break
             
 

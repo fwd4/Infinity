@@ -159,10 +159,14 @@ class VAR(nn.Module):
         cur_L = 0
         f_hat = sos.new_zeros(B, self.Cvae, self.patch_nums[-1], self.patch_nums[-1])  #[8,32,16,16]
         
+        profile = True
         for b in self.blocks: b.attn.kv_caching(True)
         for si, pn in enumerate(self.patch_nums):   # si: i-th segment
-            if si>= 9:
-                break
+            # if si>= 9:
+            #     break
+            if profile:
+                torch.cuda.synchronize()
+                t0 = time.time() * 1e3
             ratio = si / self.num_stages_minus_1   #self.num_stages_minus_1 = 9
             # last_L = cur_L
             cur_L += pn*pn
@@ -170,16 +174,17 @@ class VAR(nn.Module):
             cond_BD_or_gss = self.shared_ada_lin(cond_BD)  #[2B,1024]
             x = next_token_map  #[16,1,1024]
             AdaLNSelfAttn.forward
+
+            if profile:
+                torch.cuda.synchronize()
+                t1 = time.time() * 1e3
+
             for i,b in enumerate(self.blocks):
                 x = b(x=x, cond_BD=cond_BD_or_gss, attn_bias=None)  #torch.Size([2B, 1, 1024])
-            # if pn != 16:
-            #     for i,b in enumerate(self.blocks):
-            #         x = b(x=x, cond_BD=cond_BD_or_gss, attn_bias=None)
-            # else:
-            #     for i,b in enumerate(self.blocks):
-            #         if i == 3:
-            #             x = b(x=x, cond_BD=cond_BD_or_gss, attn_bias=None)
-            #         else: break
+
+            if profile:
+                torch.cuda.synchronize()
+                t2 = time.time() * 1e3
             logits_BlV = self.get_logits(x, cond_BD)
             
             t = cfg * ratio
@@ -198,7 +203,10 @@ class VAR(nn.Module):
                 next_token_map = next_token_map.view(B, self.Cvae, -1).transpose(1, 2)
                 next_token_map = self.word_embed(next_token_map) + lvl_pos[:, cur_L:cur_L + self.patch_nums[si+1] ** 2]
                 next_token_map = next_token_map.repeat(2, 1, 1)   # double the batch sizes due to CFG
-        
+            if profile:
+                torch.cuda.synchronize()
+                t3 = time.time() * 1e3   
+                print(f"stage {si}, {pn}, all {t3 - t0:.2f}ms, {t1 - t0:.2f}ms, 16block {t2 - t1:.2f}ms, {t3 - t2:.2f}ms")  
         for b in self.blocks: b.attn.kv_caching(False)
         img_feat = self.vae_proxy[0].fhat_to_img(f_hat).add_(1).mul_(0.5)
         # torch.cuda.synchronize()

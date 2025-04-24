@@ -10,7 +10,7 @@ setattr(torch.nn.Linear, 'reset_parameters', lambda self: None)     # disable de
 setattr(torch.nn.LayerNorm, 'reset_parameters', lambda self: None)  # disable default parameter init for faster speed
 from models import VQVAE, build_vae_var
 import time
-MODEL_DEPTH = 16    # TODO: =====> please specify MODEL_DEPTH <=====
+MODEL_DEPTH = 30    # TODO: =====> please specify MODEL_DEPTH <=====
 assert MODEL_DEPTH in {16, 20, 24, 30, 36}
 
 os.environ['CUDA_VISIBLE_DEVICES'] = '0,1,2,3,4,5,6,7'
@@ -36,7 +36,7 @@ if 'vae' not in globals() or 'var' not in globals():
     )
 
 vae_ckpt = '/share/public_models/var/vae_ch160v4096z32.pth'
-var_ckpt = '/share/public_models/var/var_d16.pth'
+var_ckpt = '/share/public_models/var/var_d30.pth'
 # load checkpoints
 vae.load_state_dict(torch.load(vae_ckpt, map_location=torch.device('cuda')), strict=True)
 var.load_state_dict(torch.load(var_ckpt, map_location=torch.device('cuda')), strict=True)
@@ -51,9 +51,9 @@ print(f'prepare finished.')
 seed = 0 #@param {type:"number"}
 torch.manual_seed(seed)
 num_sampling_steps = 250 #@param {type:"slider", min:0, max:1000, step:1}
-cfg = 4 #@param {type:"slider", min:1, max:10, step:0.1}
+cfg = 5 #@param {type:"slider", min:1, max:10, step:0.1}
 class_labels = (980, 980, 437, 437, 22, 22, 562, 562)  #@param {type:"raw"}
-class_labels = (980, 437, 22, 100)  #@param {type:"raw"}
+class_labels = (980, 437, 22, 100,980, 437, 22, 100,980, 437, 22, 100,980, 437, 22, 100)  #@param {type:"raw"}
 more_smooth = False # True for more smooth output
 
 # seed
@@ -110,7 +110,7 @@ label_B: torch.LongTensor = torch.tensor(class_labels, device=device)
 ###"warm up"###########
 with torch.inference_mode():
     with torch.autocast('cuda', enabled=True, dtype=torch.float16, cache_enabled=True):    # using bfloat16 can be faster
-        for i in range(10):
+        for i in range(2):
             recon_B3HW = var.autoregressive_infer_cfg(B=B, label_B=label_B, cfg=cfg, top_k=900, top_p=0.95, g_seed=seed, more_smooth=more_smooth)
             
 with torch.inference_mode():
@@ -126,4 +126,4 @@ chw = torchvision.utils.make_grid(recon_B3HW, nrow=8, padding=0, pad_value=1.0)
 chw = chw.permute(1, 2, 0).mul_(255).cpu().numpy()
 chw = PImage.fromarray(chw.astype(np.uint8))
 chw.show()
-chw.save('outputs/image_9.png')  # 保存为PNG格式
+chw.save('outputs/image_mtp_9_[0]1.png')  # 保存为PNG格式
