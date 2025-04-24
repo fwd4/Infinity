@@ -19,3 +19,9 @@ local_output*
 *.txt
 *.ipynb
 outputs/
+output/*
+resi_contri_E
+weights/
+wandb/
+evaluation/
+resi_contri_dE
