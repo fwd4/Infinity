@@ -89,7 +89,7 @@ class VQVAE(nn.Module):
         else:
             return [self.decoder(self.post_quant_conv(f_hat)).clamp_(-1, 1) for f_hat in ls_f_hat_BChw]
     
-    def load_state_dict(self, state_dict: Dict[str, Any], strict=True, assign=False):
+    def load_state_dict(self, state_dict: Dict[str, Any], strict=True):
         if 'quantize.ema_vocab_hit_SV' in state_dict and state_dict['quantize.ema_vocab_hit_SV'].shape[0] != self.quantize.ema_vocab_hit_SV.shape[0]:
             state_dict['quantize.ema_vocab_hit_SV'] = self.quantize.ema_vocab_hit_SV
-        return super().load_state_dict(state_dict=state_dict, strict=strict, assign=assign)
+        return super().load_state_dict(state_dict=state_dict, strict=strict)

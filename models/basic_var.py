@@ -88,9 +88,9 @@ class SelfAttention(nn.Module):
     
     # NOTE: attn_bias is None during inference because kv cache is enabled
     def forward(self, x, attn_bias):
-        B, L, C = x.shape
+        B, L, C = x.shape  #torch.Size([16, 1, 1024])
         
-        qkv = F.linear(input=x, weight=self.mat_qkv.weight, bias=torch.cat((self.q_bias, self.zero_k_bias, self.v_bias))).view(B, L, 3, self.num_heads, self.head_dim)
+        qkv = F.linear(input=x, weight=self.mat_qkv.weight, bias=torch.cat((self.q_bias, self.zero_k_bias, self.v_bias))).view(B, L, 3, self.num_heads, self.head_dim) #
         main_type = qkv.dtype
         # qkv: BL3Hc
         
@@ -101,8 +101,8 @@ class SelfAttention(nn.Module):
         if self.attn_l2_norm:
             scale_mul = self.scale_mul_1H11.clamp_max(self.max_scale_mul).exp()
             if using_flash or self.using_xform: scale_mul = scale_mul.transpose(1, 2)  # 1H11 to 11H1
-            q = F.normalize(q, dim=-1).mul(scale_mul)
-            k = F.normalize(k, dim=-1)
+            q = F.normalize(q, dim=-1).mul(scale_mul)  #BHLc：[16, 16, 1, 64]
+            k = F.normalize(k, dim=-1)  #BHLc：[16, 16, 1, 64]
         
         if self.caching:
             if self.cached_k is None: self.cached_k = k; self.cached_v = v
@@ -153,7 +153,7 @@ class AdaLNSelfAttn(nn.Module):
         if self.shared_aln:
             gamma1, gamma2, scale1, scale2, shift1, shift2 = (self.ada_gss + cond_BD).unbind(2) # 116C + B16C =unbind(2)=> 6 B1C
         else:
-            gamma1, gamma2, scale1, scale2, shift1, shift2 = self.ada_lin(cond_BD).view(-1, 1, 6, self.C).unbind(2)
+            gamma1, gamma2, scale1, scale2, shift1, shift2 = self.ada_lin(cond_BD).view(-1, 1, 6, self.C).unbind(2)  #torch.Size([16,1,6, 1024])
         x = x + self.drop_path(self.attn( self.ln_wo_grad(x).mul(scale1.add(1)).add_(shift1), attn_bias=attn_bias ).mul_(gamma1))
         x = x + self.drop_path(self.ffn( self.ln_wo_grad(x).mul(scale2.add(1)).add_(shift2) ).mul(gamma2)) # this mul(gamma2) cannot be in-placed when FusedMLP is used
         return x

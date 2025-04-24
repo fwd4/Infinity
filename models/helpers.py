@@ -4,7 +4,7 @@ from torch.nn import functional as F
 
 
 def sample_with_top_k_top_p_(logits_BlV: torch.Tensor, top_k: int = 0, top_p: float = 0.0, rng=None, num_samples=1) -> torch.Tensor:  # return idx, shaped (B, l)
-    B, l, V = logits_BlV.shape
+    B, l, V = logits_BlV.shape   # [8,1,4096]
     if top_k > 0:
         idx_to_remove = logits_BlV < logits_BlV.topk(top_k, largest=True, sorted=False, dim=-1)[0].amin(dim=-1, keepdim=True)
         logits_BlV.masked_fill_(idx_to_remove, -torch.inf)
@@ -16,6 +16,7 @@ def sample_with_top_k_top_p_(logits_BlV: torch.Tensor, top_k: int = 0, top_p: fl
     # sample (have to squeeze cuz torch.multinomial can only be used for 2D tensor)
     replacement = num_samples >= 0
     num_samples = abs(num_samples)
+    # print(torch.equal(logits_BlV[1], logits_BlV[0]))  # False  
     return torch.multinomial(logits_BlV.softmax(dim=-1).view(-1, V), num_samples=num_samples, replacement=replacement, generator=rng).view(B, l, num_samples)
 
 
