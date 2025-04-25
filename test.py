@@ -1,11 +1,17 @@
+import os  
+import torch  
+import numpy as np  
+from PIL import Image as PImage  
+import argparse  
+from utils.misc import create_npz_from_sample_folder  
+
 ################## 1. Download checkpoints and build models
 import os
-import os.path as osp
 import torch, torchvision
 import random
-import numpy as np
-import transformers
-import PIL.Image as PImage, PIL.ImageDraw as PImageDraw
+
+
+
 setattr(torch.nn.Linear, 'reset_parameters', lambda self: None)     # disable default parameter init for faster speed
 setattr(torch.nn.LayerNorm, 'reset_parameters', lambda self: None)  # disable default parameter init for faster speed
 from models import VQVAE, build_vae_var
@@ -13,7 +19,7 @@ import time
 MODEL_DEPTH = 30    # TODO: =====> please specify MODEL_DEPTH <=====
 assert MODEL_DEPTH in {16, 20, 24, 30, 36}
 
-os.environ['CUDA_VISIBLE_DEVICES'] = '0,1,2,3,4,5,6,7'
+# os.environ['CUDA_VISIBLE_DEVICES'] = '0,1,2,3,4,5,6,7'
 # download checkpoint
 # hf_home = 'https://huggingface.co/FoundationVision/var/resolve/main'
 # vae_ckpt, var_ckpt = 'vae_ch160v4096z32.pth', f'var_d{MODEL_DEPTH}.pth'
@@ -35,8 +41,8 @@ if 'vae' not in globals() or 'var' not in globals():
         flash_if_available=False
     )
 
-vae_ckpt = '/share/public_models/var/vae_ch160v4096z32.pth'
-var_ckpt = '/share/public_models/var/var_d30.pth'
+vae_ckpt = '/home/model_data/var/vae_ch160v4096z32.pth'
+var_ckpt = '/home/model_data/var/var_d30.pth'
 # load checkpoints
 vae.load_state_dict(torch.load(vae_ckpt, map_location=torch.device('cuda')), strict=True)
 var.load_state_dict(torch.load(var_ckpt, map_location=torch.device('cuda')), strict=True)
@@ -74,56 +80,60 @@ torch.set_float32_matmul_precision('high' if tf32 else 'highest')
 B = len(class_labels)
 label_B: torch.LongTensor = torch.tensor(class_labels, device=device)
 
-''' 
-#Test Time
-# ####"warm up"###########
-# with torch.inference_mode():
-#     with torch.autocast('cuda', enabled=True, dtype=torch.float16, cache_enabled=True):    # using bfloat16 can be faster
-#         for i in range(10):
-#             recon_B3HW,total_times,iteration_times,\
-#                 iteration_times2,iteration_times1 = var.autoregressive_infer_cfg(B=B, label_B=label_B, cfg=cfg, top_k=900, top_p=0.95, g_seed=seed, more_smooth=more_smooth)
-            
-# with torch.inference_mode():
-#     with torch.autocast('cuda', enabled=True, dtype=torch.float16, cache_enabled=True):    # using bfloat16 can be faster
-#         total_start = time.perf_counter()
-#         recon_B3HW,total_times,iteration_times,\
-#             iteration_times2,iteration_times1 = var.autoregressive_infer_cfg(B=B, label_B=label_B, cfg=cfg, top_k=900, top_p=0.95, g_seed=seed, more_smooth=more_smooth)
-#         torch.cuda.synchronize()
-#         total_end = time.perf_counter()
-#         print(f"{(total_start-total_end)*1000:.3f}ms")
+# 解析命令行参数  
+parser = argparse.ArgumentParser(description='Generate images for specific class range')  
+parser.add_argument('--start_class', type=int, required=True, help='开始类别索引')  
+parser.add_argument('--end_class', type=int, required=True, help='结束类别索引（不含）')  
+parser.add_argument('--gpu_id', type=int, default=0, help='GPU ID')  
+parser.add_argument('--images_per_class', type=int, default=50, help='每个类别生成的图片数量')  
+parser.add_argument('--output_folder', type=str, default='outputs/fid_samples', help='输出文件夹')  
+# parser.add_argument('--create_npz', action='store_true', help='是否创建npz文件（仅最后一个进程需要）')  
+args = parser.parse_args()  
 
-# for duration in total_times:  
-#     print(f"总耗时: {duration:.3f}ms")
-# for stage, duration in iteration_times:  
-#     print(f"第 {stage} 阶段耗时: {duration:.3f}ms")
-# for stage, duration in iteration_times2:  
-#     print(f"第 {stage} 阶段耗时: {duration:.3f}ms") 
-# for stage, duration in iteration_times1:  
-#     print(f"第 {stage} 阶段耗时: {duration:.3f}ms") 
+# 设置设备  
+device = f'cuda:0'  
+torch.cuda.set_device(0)  
 
-# print(total_times)
-# print(iteration_times)
-# print(iteration_times2)
-# print(iteration_times1)
-'''
+# 设置输出文件夹  
+output_folder = args.output_folder  
+os.makedirs(output_folder, exist_ok=True)  
 
-###"warm up"###########
-with torch.inference_mode():
-    with torch.autocast('cuda', enabled=True, dtype=torch.float16, cache_enabled=True):    # using bfloat16 can be faster
-        for i in range(2):
-            recon_B3HW = var.autoregressive_infer_cfg(B=B, label_B=label_B, cfg=cfg, top_k=900, top_p=0.95, g_seed=seed, more_smooth=more_smooth)
-            
-with torch.inference_mode():
-    with torch.autocast('cuda', enabled=True, dtype=torch.float16, cache_enabled=True):    # using bfloat16 can be faster
-        total_start = time.perf_counter()
-        recon_B3HW = var.autoregressive_infer_cfg(B=B, label_B=label_B, cfg=cfg, top_k=900, top_p=0.95, g_seed=seed, more_smooth=more_smooth)
-        # torch.cuda.synchronize()
-        total_end = time.perf_counter()
-        print(f"TOTAL TIME {(total_end-total_start)*1000:.3f}ms")
+# 设置参数  
+images_per_class = args.images_per_class  
+cfg = 1.5  
+top_p = 0.96  
+top_k = 900  
+more_smooth = False  
 
-print(recon_B3HW.shape)  #torch.Size([8, 3, 256, 256])
-chw = torchvision.utils.make_grid(recon_B3HW, nrow=8, padding=0, pad_value=1.0)
-chw = chw.permute(1, 2, 0).mul_(255).cpu().numpy()
-chw = PImage.fromarray(chw.astype(np.uint8))
-chw.show()
-chw.save('outputs/image_mtp_9_[0]1.png')  # 保存为PNG格式
+# 打印任务信息  
+print(f"GPU {args.gpu_id} 处理类别 {args.start_class} 到 {args.end_class-1}，每类 {images_per_class} 张图片")  
+
+# 这里需要加载模型，与原代码保持一致  
+# 比如: var = YourModel().to(device)  
+# ...  
+
+# 生成图片  
+with torch.inference_mode():  
+    with torch.autocast('cuda', enabled=True, dtype=torch.float16, cache_enabled=True):  
+        for class_id in range(args.start_class, args.end_class):  
+            print(f"GPU {args.gpu_id} 正在处理类别 {class_id}...")  
+            label_B = torch.tensor([class_id] * images_per_class, device=device)  
+            recon_B3HW = var.autoregressive_infer_cfg(  
+                B=images_per_class, label_B=label_B, cfg=cfg, top_k=top_k,   
+                top_p=top_p, g_seed=class_id, more_smooth=more_smooth  
+            )  
+            for i, img in enumerate(recon_B3HW):  
+                chw = img.permute(1, 2, 0).mul_(255).cpu().numpy()  
+                chw = PImage.fromarray(chw.astype(np.uint8))  
+                img_path = os.path.join(output_folder, f'class_{class_id}_img_{i}.png')  
+                chw.save(img_path)  
+            print(f"GPU {args.gpu_id} 完成类别 {class_id} 的生成")  
+
+print(f"GPU {args.gpu_id} 已完成类别 {args.start_class} 到 {args.end_class-1} 的全部处理")  
+
+# # 只有在指定创建npz时才创建（通常由最后一个完成的进程执行）  
+# if args.create_npz:  
+#     print(f"创建NPZ文件...")  
+#     npz_file_path = 'outputs/fid_samples.npz'  
+#     create_npz_from_sample_folder(output_folder, npz_file_path)  
+#     print(f"FID samples saved to {npz_file_path}")

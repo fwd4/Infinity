@@ -294,8 +294,8 @@ class VAR(nn.Module):
         self, B: int, label_B: Optional[Union[int, torch.LongTensor]],
         g_seed: Optional[int] = None, cfg=1.5, top_k=0, top_p=0.0,
         more_smooth=False,        
-        si_para = 9,
-        ratio_list = [[20],[0]],
+        si_para = 8,
+        ratio_list = [[80],[0]],
         kv_opt=None
     ) -> torch.Tensor:   # returns reconstructed image (B, 3, H, W) in [0, 1]
         
@@ -328,7 +328,7 @@ class VAR(nn.Module):
         cur_L = 0
         f_hat = sos.new_zeros(B, self.Cvae, self.patch_nums[-1], self.patch_nums[-1])  #[8,32,16,16]
         
-        profile = True
+        profile = False
         for b in self.blocks: b.attn.kv_caching(True)
         for si, pn in enumerate(self.patch_nums):   # si: i-th segment
             if si <= si_para:
@@ -460,6 +460,7 @@ class VAR(nn.Module):
 
         for b in self.blocks: b.attn.kv_caching(False)
         img_feat = self.vae_proxy[0].fhat_to_img(f_hat).add_(1).mul_(0.5)
+        print("+++++++++++++++++++++++++++")
         # torch.cuda.synchronize()
         # total_end = time.perf_counter()
         # print(f"{(total_end-total_start)*1000:.3f}ms")

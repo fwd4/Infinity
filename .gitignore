@@ -25,3 +25,4 @@ weights/
 wandb/
 evaluation/
 resi_contri_dE
+classify_image_graph_def.pb
