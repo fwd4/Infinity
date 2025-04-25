@@ -17,6 +17,7 @@ def compare_tensors(pkl_file1, pkl_file2):
             torch.testing.assert_close(t1, t2, rtol=1e-5, atol=1e-5)
             print(f"Tensor {i}: Match ✓")
         except AssertionError as e:
+            import pdb; pdb.set_trace()
             print(f"Tensor {i}: Mismatch ✗")
             print(f"Shape: {t1.shape}")
             print(f"Error: {str(e)}\n")

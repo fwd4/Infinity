@@ -61,11 +61,26 @@ def get_freq_old(codes, pn, ratio1):
     # 返回所有mask张量，顺序是从小比例到大比例差：top5, top10-top5, top30-top10, top50-top30  
     return tuple(masks)  
 
-# top(lb) - top(ub)
-def get_freq_with_lb_ub(code, lb, ub):
+def get_freq_core3(tensor, window_size=3):
+    # codes: [1, pn*pn, d]
+    B, S, C = tensor.shape
+    pn = int(math.sqrt(S))
+    x = tensor.permute(0, 2, 1).reshape(B, C, pn, pn) # [B, C, pn, pn]
+    mean = F.avg_pool2d(x, window_size, stride=1, padding=window_size//2, count_include_pad=False)
+    mean_sq = F.avg_pool2d(x.pow(2), window_size, stride=1, padding=window_size//2, count_include_pad=False)
+    #import pdb; pdb.set_trace()
+    return (mean_sq - mean.pow(2)).mean(dim=1).flatten()
+
+def get_freq_core1(code):
     # codes: [1, pn*pn, d]
     dc_component = torch.mean(code, dim=1, keepdim=True)
     dc_diff = torch.norm(code - dc_component, dim=2).flatten()
+    return dc_diff
+
+# top(lb) - top(ub)
+def get_freq_with_lb_ub(code, lb, ub):
+    # codes: [1, pn*pn, d]
+    dc_diff = get_freq_core3(code)
     total_sz = dc_diff.numel()
     # 获取 top_high 和 top_low 的索引
     top_high_indices = torch.topk(dc_diff, total_sz * lb // 100, largest=True, sorted=False).indices
@@ -107,7 +122,9 @@ def get_freq(codes_list, ratio_list):
 
     for codes, l, u in zip(codes_list, lb, ub):
         mask = get_freq_with_lb_ub(codes, l, u)
+        #mask = get_freq_with_lb_ub(codes, 10, 0)
         mask_list.append(mask)
+    #mask_list[-1] = get_freq_with_lb_ub(codes_list[-1], 100, 0)
 
     return mask_list
 
@@ -901,7 +918,7 @@ class Infinity(nn.Module):
                 return codes
 
         n_seq_stages = min(si_para+1, len(scale_schedule))
-        record_codes = [last_stage]
+        residual_codes = []
         rope2d_freqs_grid = self.rope2d_freqs_grid[str(tuple(scale_schedule))].to(last_stage.device)
         rope2d_opt_level = kwargs.get('rope2d_opt_level', 1)
         for si, pn in enumerate(scale_schedule[:n_seq_stages]):   # si: i-th segment
@@ -959,7 +976,7 @@ class Infinity(nn.Module):
                 residual = codes
                 summed_codes += codes
 
-            # record_codes.append(residual)
+            #residual_codes.append(residual)
             ######################### 2.1 #############################
 
             ######################### 2.2 #############################            
@@ -975,7 +992,6 @@ class Infinity(nn.Module):
                 print(f"stage {si}, {pn}, all {t3 - t0:.2f}ms, {t1 - t0:.2f}ms, 32block {t2 - t1:.2f}ms, {t3 - t2:.2f}ms")
         # torch.save(record_codes, f"record_codes_mtp12.vv2.pkl")
 
-        
         if n_seq_stages <= num_stages_minus_1:
             si = n_seq_stages
             # import pdb; pdb.set_trace()
@@ -1154,6 +1170,10 @@ class Infinity(nn.Module):
         if not ret_img:
             return ret, idx_Bl_list, []
         
+        #residual_codes += test_partial_list
+        #print(len(residual_codes))
+        #torch.save(residual_codes, f"residual_si_papra{si_para}.pkl")
+        
         if vae_type != 0:
             summed_codes = sum(test_partial_list) + summed_codes
             img = vae.decode(summed_codes.squeeze(-3))
@@ -1164,7 +1184,7 @@ class Infinity(nn.Module):
         img = (img + 1) / 2
         img = img.permute(0, 2, 3, 1).mul_(255).to(torch.uint8).flip(dims=(3,))
         # print(f"pre: {tt1 - tt0:.2f}ms, backbone: {tt2-tt1:.2f}ms, post{tt3 - tt2:.2f}ms")
-        return record_codes, idx_Bl_list, img
+        return residual_codes, idx_Bl_list, img
     
     @for_visualize
     def vis_key_params(self, ep):
