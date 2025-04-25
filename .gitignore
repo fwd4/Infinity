@@ -56,3 +56,4 @@ resi_contri_dE/
 animals.pkl
 !evaluation/gen_eval/prompt_rewrite_cache.json
 !evaluation/gen_eval/prompt_rewrite_cache_dsv3.json
+classify_image_graph_def.pb
