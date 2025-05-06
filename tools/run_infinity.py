@@ -20,7 +20,9 @@ from transformers import AutoTokenizer, T5EncoderModel, T5TokenizerFast
 from PIL import Image, ImageEnhance
 import torch.nn.functional as F
 from torch.cuda.amp import autocast
-
+import sys
+path_to_add = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..') 
+sys.path.append(path_to_add)
 from infinity.models.infinity import Infinity, get_torch_mem_usage#, ATTN_TIME
 from infinity.models.basic import *
 import PIL.Image as PImage

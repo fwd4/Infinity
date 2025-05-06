@@ -365,28 +365,79 @@ class SelfAttention(nn.Module):
                 from .rope_triton import apply_rotary_triton
                 q, k = apply_rotary_triton(q, k, rope2d_freqs_grid, self.using_flash) #, freqs_cis=freqs_cis)
             elif rope2d_opt_level == 1:
-                q, k = apply_rotary(q, k, rope2d_freqs_grid, self.using_flash) #, freqs_cis=freqs_cis)
+                q, k = apply_rotary(q, k, rope2d_freqs_grid, self.using_flash) #, freqs_cis=freqs_cis)  #(B,H,L,C)
             else:
                 q, k = apply_rotary_emb(q, k, mask_id, scale_schedule, rope2d_freqs_grid, self.pad_to_multiplier, self.rope2d_normalized_by_hw, scale_ind) #, freqs_cis=freqs_cis)
 
         if self.caching:    # kv caching: only used during inference
-            if self.cached_k is None: self.cached_k = k; self.cached_v = v
-            else: k = self.cached_k = torch.cat((self.cached_k, k), dim=L_dim); v = self.cached_v = torch.cat((self.cached_v, v), dim=L_dim)
+            if mask_id == None:                               
+                if self.cached_k is None: 
+                    self.cached_k = k; self.cached_v = v
+                else: 
+                    k = self.cached_k = torch.cat((self.cached_k, k), dim=L_dim)
+                    v = self.cached_v = torch.cat((self.cached_v, v), dim=L_dim)                
+            else:
+                k = torch.cat((self.cached_k, k), dim=L_dim)
+                v = torch.cat((self.cached_v, v), dim=L_dim)
+                
+                cached_len = self.cached_k.shape[L_dim]
+                start_id_kv = cached_len
+                para_num = len(mask_id)
+
         
+        causal = kwargs.get('causal', 0)
         if self.using_flash:
             if attn_bias_or_two_vector is not None: # training
                 kw = dict(VAR_visible_kvlen=attn_bias_or_two_vector[0], VAR_invisible_qlen=attn_bias_or_two_vector[1])
             else:                                   # inference (autoregressive sampling)
                 kw = dict()
-            oup = flash_attn_func(q.to(v.dtype), k.to(v.dtype), v, dropout_p=0, softmax_scale=self.scale, **kw)
-            oup = oup.reshape(B, L, C)
+            if isinstance(mask_id, list) and causal:
+                oup = torch.empty((B, L, C), device=q.device, dtype=q.dtype)  
+
+                start_q = 0  
+                kv_len = 0  
+                for i in range(para_num):  
+                    q_len = len(mask_id[i])  
+                    kv_len += q_len  
+                    # 仅切片一次并重用  
+                    q_slice = q[:, start_q:start_q + q_len, :]  
+                    k_slice = k[:, :start_id_kv + kv_len, :]  
+                    v_slice = v[:, :start_id_kv + kv_len, :]  
+
+                    # 处理注意力计算  
+                    result = flash_attn_func(q_slice.to(v.dtype), k_slice.to(v.dtype), v_slice, dropout_p=0, softmax_scale=self.scale, **kw)
+                    # 重新调整形状并直接放入预分配的输出张量  
+                    oup[:, start_q:start_q + q_len, :] = result.reshape(B, q_len, C)  
+                    start_q += q_len                  
+            else:
+                oup = flash_attn_func(q.to(v.dtype), k.to(v.dtype), v, dropout_p=0, softmax_scale=self.scale, **kw)
+                oup = oup.reshape(B, L, C)
         else:
             # if self.cos_attn: q, k are in fp32; v is in bf16
             # else: q, k, v are in bf16
             if self.use_flex_attn and attn_fn is not None:
                 oup = attn_fn(q, k, v, scale=self.scale).transpose(1, 2).reshape(B, L, C)
             else:
-                oup = slow_attn(query=q, key=k, value=v, scale=self.scale, attn_mask=attn_bias_or_two_vector, dropout_p=0).transpose(1, 2).reshape(B, L, C)
+                if isinstance(mask_id, list) and causal:
+                    oup = torch.empty((B, L, C), device=q.device, dtype=q.dtype)  
+                    start_q = 0  
+                    kv_len = 0  
+
+                    for i in range(para_num):  
+                        q_len = len(mask_id[i])  
+                        kv_len += q_len  
+                        # 仅切片一次并重用  
+                        q_slice = q[:, :, start_q:start_q + q_len, :]  
+                        k_slice = k[:, :, :start_id_kv + kv_len, :]  
+                        v_slice = v[:, :, :start_id_kv + kv_len, :]  
+
+                        # 处理注意力计算  
+                        result = slow_attn(query=q_slice, key=k_slice, value=v_slice, scale=self.scale, attn_mask=attn_bias_or_two_vector, dropout_p=0).transpose(1, 2).reshape(B, L, C)
+                        # 重新调整形状并直接放入预分配的输出张量  
+                        oup[:, start_q:start_q + q_len, :] = result
+                        start_q += q_len
+                else:   
+                    oup = slow_attn(query=q, key=k, value=v, scale=self.scale, attn_mask=attn_bias_or_two_vector, dropout_p=0).transpose(1, 2).reshape(B, L, C)
             # oup: bf16
         
         return self.proj_drop(self.proj(oup))

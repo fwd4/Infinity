@@ -2,9 +2,9 @@
 init_args:
   pn: '1M'
   root_folder: '/workspace/Infinity'
-  model_path: 'weights/infinity_2b_reg.pth'
-  vae_path: 'weights/infinity_vae_d32reg.pth'
-  text_encoder_ckpt: 'weights/flan-t5-xl'
+  model_path: '/home/model_data/infinity_2b_reg.pth'
+  vae_path: '/home/model_data/infinity_vae_d32reg.pth'
+  text_encoder_ckpt: '/home/model_data/flan-t5-xl'
   add_lvl_embeding_only_first_block: 1
   use_bit_label: 1
   model_type: 'infinity_2b'

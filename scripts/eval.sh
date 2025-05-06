@@ -219,7 +219,7 @@ cfg_insertion_layer=0
 sub_fix=cfg${cfg}_tau${tau}_cfg_insertion_layer${cfg_insertion_layer}
 use_flex_attn=0
 si_para=8
-ratio_list='[50,30,15,5]'
+ratio_list='[20,20,10,10],[0,0,0,0]'
 kv_opt=0
 prefix=1497
 

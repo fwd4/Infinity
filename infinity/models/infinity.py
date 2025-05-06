@@ -106,7 +106,7 @@ def get_freq(codes_list, ratio_list):
     返回:
         mask_list: List[Tensor], 每个 Tensor 包含对应比例的索引
     """
-    assert len(codes_list)== len(ratio_list), "codes_list, pn_list 和 ratio_list 的长度必须相同"
+    # assert len(codes_list)== len(ratio_list), "codes_list, pn_list 和 ratio_list 的长度必须相同"
     lb = []
     ub = []
     if type(ratio_list[0]) is list:
@@ -917,10 +917,13 @@ class Infinity(nn.Module):
                 codes = vae.quantizer.lfq.indices_to_codes(idx_Bld, label_type='bit_label') 
                 return codes
 
+
         n_seq_stages = min(si_para+1, len(scale_schedule))
         residual_codes = []
         rope2d_freqs_grid = self.rope2d_freqs_grid[str(tuple(scale_schedule))].to(last_stage.device)
         rope2d_opt_level = kwargs.get('rope2d_opt_level', 1)
+        using_flash = kwargs.get("using_flash", 0)
+        causal = kwargs.get("causal", 0)
         for si, pn in enumerate(scale_schedule[:n_seq_stages]):   # si: i-th segment
             if profile:
                 t0 = time.time() * 1e3
@@ -948,7 +951,7 @@ class Infinity(nn.Module):
                 for ii, m in enumerate(b.module):
                     block_number = block_idx * 4 + ii
                     last_stage = m(x=last_stage, cond_BD=cond_BD_or_gss, ca_kv=ca_kv, attn_bias_or_two_vector=None, attn_fn=attn_fn, scale_schedule=scale_schedule,
-                                   rope2d_freqs_grid=rope_cache, scale_ind=si, si_para=si_para, kv_opt=kv_opt, rope2d_opt_level=rope2d_opt_level)
+                                   rope2d_freqs_grid=rope_cache, scale_ind=si, si_para=si_para, kv_opt=kv_opt, rope2d_opt_level=rope2d_opt_level,using_flash=using_flash,causal=causal)
                     if (cfg != 1) and (layer_idx in abs_cfg_insertion_layers):
                         last_stage = cfg * last_stage[:B] + (1-cfg) * last_stage[B:]
                         last_stage = torch.cat((last_stage, last_stage), 0)
@@ -995,7 +998,7 @@ class Infinity(nn.Module):
         if n_seq_stages <= num_stages_minus_1:
             si = n_seq_stages
             # import pdb; pdb.set_trace()
-            assert len(ratio_list) == num_stages_minus_1 - si_para
+            # assert len(ratio_list) == num_stages_minus_1 - si_para
         
             if profile:
                 torch.cuda.synchronize()
@@ -1011,7 +1014,6 @@ class Infinity(nn.Module):
             pfs = kwargs.get("partition_on_full_scale", False)
             mask_list = get_freq(para_stage_inputs, ratio_list)                 
             pruning = kwargs.get("pruning", 1)
-
             # prune input tokens
             if pruning == 2:
                 com_last_stage = process_and_concat_last_stage(para_stage_inputs, mask_list)   #[B,com_pruned_seq_len,d] #[1,com_pruned_seq_len,32]
@@ -1034,8 +1036,9 @@ class Infinity(nn.Module):
 
                     for ii, m in enumerate(b.module):
                         block_number = block_idx * 4 + ii
-                        com_last_stage = m(x=com_last_stage, cond_BD=cond_BD_or_gss, ca_kv=ca_kv, attn_bias_or_two_vector=None, attn_fn=attn_fn, scale_schedule=scale_schedule,
-                                               rope2d_freqs_grid=rope_cache, scale_ind = scale_list, si_para=si_para, kv_opt=kv_opt, mask_id=mask_list, rope2d_opt_level=rope2d_opt_level)
+                        com_last_stage = m(x=com_last_stage, cond_BD=cond_BD_or_gss, ca_kv=ca_kv, attn_bias_or_two_vector=None, attn_fn=attn_fn, 
+                                           scale_schedule=scale_schedule, rope2d_freqs_grid=rope_cache, scale_ind = scale_list, 
+                                           si_para=si_para, kv_opt=kv_opt, mask_id=mask_list, rope2d_opt_level=rope2d_opt_level,using_flash=using_flash,causal=causal)
 
                         if (cfg != 1) and (layer_idx in abs_cfg_insertion_layers):
                             last_stage_gather = cfg * last_stage_gather[:B] + (1-cfg) * last_stage_gather[B:]

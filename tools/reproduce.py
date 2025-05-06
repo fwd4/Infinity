@@ -1,6 +1,7 @@
+import os
+os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 import random
 import torch
-import os
 import os.path as osp
 import cv2
 import numpy as np
@@ -12,6 +13,7 @@ import argparse
 import torch.distributed as dist
 import torch.multiprocessing as mp
 from pytorch_lightning import seed_everything
+
 
 
 def load_yaml_config(yaml_path):
