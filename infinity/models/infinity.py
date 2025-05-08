@@ -1133,7 +1133,7 @@ class Infinity(nn.Module):
             if profile:
                 torch.cuda.synchronize()
                 t3 = time.time() * 1e3
-                print(f"stage {parallel}, {pn_list}, all {t3 - t0:.2f}ms, {t1 - t0:.2f}ms, 32block {t2 - t1:.2f}ms, {t3 - t2:.2f}ms")
+                print(f"stage {scale_list}, {pn_list}, all {t3 - t0:.2f}ms, {t1 - t0:.2f}ms, 32block {t2 - t1:.2f}ms, {t3 - t2:.2f}ms")
 
             # break   
         # Save the data to pkl files
