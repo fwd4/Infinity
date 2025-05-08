@@ -10,6 +10,6 @@ gen_kwargs:
   pruning: 2 # 0: prune nothing 1: prune outputs 2: prune inouts
   causal: 1
   rope2d_opt_level: 1
-  using_flash: 1
+  using_flash: 0
   si_para: 8
-  ratio_list: [[50,30,10,10],[30,10,0,0]]
+  ratio_list: [[50,30,15,5],[30,15,5,0]]

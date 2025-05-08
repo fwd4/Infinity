@@ -96,6 +96,12 @@ test_gen_eval() {
     --model-config evaluation/gen_eval/mask2former/mask2former_swin-s-p4-w7-224_lsj_8x2_50e_coco.py \
     --model-path weights/mask2former
 
+    # # detect objects
+    # ${python_ext} evaluation/gen_eval/evaluate_images.py ${out_dir}/images \
+    # --outfile ${out_dir}/results/det.jsonl \
+    # --model-config evaluation/gen_eval/mask2former/mask2former_swin-s-p4-w7-224_lsj_8x2_50e_coco.py \
+    # --model-path weights/mask2former
+
     # accumulate results
     ${python_ext} evaluation/gen_eval/summary_scores.py ${out_dir}/results/det.jsonl > ${out_dir}/results/res.txt
     cat ${out_dir}/results/res.txt

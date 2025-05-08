@@ -432,7 +432,7 @@ class SelfAttention(nn.Module):
                         v_slice = v[:, :, :start_id_kv + kv_len, :]  
 
                         # 处理注意力计算  
-                        result = slow_attn(query=q_slice, key=k_slice, value=v_slice, scale=self.scale, attn_mask=attn_bias_or_two_vector, dropout_p=0).transpose(1, 2).reshape(B, L, C)
+                        result = slow_attn(query=q_slice, key=k_slice, value=v_slice, scale=self.scale, attn_mask=attn_bias_or_two_vector, dropout_p=0).transpose(1, 2).reshape(B, -1, C)
                         # 重新调整形状并直接放入预分配的输出张量  
                         oup[:, start_q:start_q + q_len, :] = result
                         start_q += q_len
