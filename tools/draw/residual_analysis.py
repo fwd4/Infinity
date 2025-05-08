@@ -53,17 +53,37 @@ def cumsum_tensor_lists(tlist):
         result.append(cumsum.clone())  # Clone to avoid reference issues
     return result
 
-def compare_tensors(pkl_file1, pkl_file2, seq_stages = 10):
+def get_freq_scale_factor(freq):
+    freq_min = torch.min(freq)
+    freq_max = torch.max(freq)
+    freq_scale = 2.0 / (freq_max - freq_min)
+    scale_factor = (freq - freq_min) * freq_scale + 1
+    return scale_factor
+
+def compare_tensors(pkl_file1, pkl_file2, seq_stages = 12):
+#def compare_tensors(pkl_file1, pkl_file2, seq_stages = 9):
     """Compare tensors from two pickle files."""
     tensors1 = load_pkl_tensors(pkl_file1)
     tensors2 = load_pkl_tensors(pkl_file2)
+
+    # print(tensors1[0].shape)
+    # print(tensors1[0].squeeze(0).shape)
+    # print(tensors1[0].squeeze(0).permute(1, 2, 0).shape)
+    tensors1 = [t.squeeze(0) for t in tensors1]
+    tensors2 = [t.squeeze(0) for t in tensors2]
     
     if len(tensors1) != len(tensors2):
         raise ValueError(f"Number of tensors mismatch: {len(tensors1)} vs {len(tensors2)}")
     
     cumsum1 = cumsum_tensor_lists(tensors1)
     cumsum2 = cumsum_tensor_lists(tensors2)
-    torch.testing.assert_close(cumsum1[seq_stages], cumsum2[seq_stages])
+    for i in range(len(cumsum1)):
+        try:
+            torch.testing.assert_close(cumsum1[i], cumsum2[i])
+        except:
+            seq_stages = i - 1
+            print(f"seq_stages: {seq_stages}")
+            break
 
     # last residual
     R_b = tensors1[seq_stages]
@@ -74,6 +94,24 @@ def compare_tensors(pkl_file1, pkl_file2, seq_stages = 10):
     # ground truth residual
     R_g = G - B
 
+    B_freq = get_freq3(G, 3).cpu() # 1, H, W
+    B_freq_sf = get_freq_scale_factor(B_freq)
+    
+    # Generate bucket indices for B_freq
+    num_buckets = 100
+    B_freq_flat = B_freq.flatten()
+    bucket_edges = torch.linspace(B_freq_flat.min(), B_freq_flat.max(), num_buckets + 1)
+    B_freq_buckets = torch.zeros_like(B_freq, dtype=torch.long)
+    
+    for i in range(num_buckets):
+        mask = (B_freq >= bucket_edges[i]) & (B_freq < bucket_edges[i + 1])
+        B_freq_buckets[mask] = i
+    
+    # Set the last bucket for maximum values
+    B_freq_buckets[B_freq == bucket_edges[-1]] = num_buckets - 1
+    
+
+
     Rs_seq = tensors1[seq_stages - len(tensors1) - 1:]
     # residuals of parallel
     Rs_para = tensors2[seq_stages - len(tensors2) - 1:]
@@ -82,7 +120,7 @@ def compare_tensors(pkl_file1, pkl_file2, seq_stages = 10):
     for i in range(len(Rs_seq)):
         names.append(f"R[{i-len(Rs_seq)}]")
     n = len(names) # B & R_g & Rs
-    m = 11
+    m = 4
     fig = plt.figure(figsize=(n*5, m*4))  
     gs = gridspec.GridSpec(m, n, height_ratios=[1]*m, width_ratios=[1]* n)  
     
@@ -122,164 +160,242 @@ def compare_tensors(pkl_file1, pkl_file2, seq_stages = 10):
         ax.set_title(f'Seq {names[i]} contrib on G, top 20%')
     
     r += 1
-    for i, matrix in enumerate([*Rs_para]):
-        ax = plt.subplot(gs[r, i+2])
-        sns.heatmap(vector_projection_3d(matrix, G).cpu(), ax=ax, 
-                   cmap=custom_cmap,
-                   vmin=vmin,
-                   vmax=vmax,
-                   center=0,
-                   cbar_kws={'label': 'Value'})
-        ax.set_title(f'Para {names[i+2]} contrib on G')
+    ax = plt.subplot(gs[r, 0])
+    ax.hist(B_freq.flatten(), bins=num_buckets, edgecolor='black')
+    ax.set_title('Histogram of B_freq')
+    ax.set_xlabel('Frequency Value')
+    ax.set_ylabel('Count')
     
-    r += 1
-    para_sum = 0
-    for i, matrix in enumerate([*Rs_para]):
-        ax = plt.subplot(gs[r, i+2])
-        m = vector_projection_3d(matrix, G).cpu()
-        th_hi = np.percentile(m, 80)
-        mask = m < th_hi
-        m[mask] = 0
-        para_sum += m
-        sns.heatmap(m, ax=ax, 
-                   cmap=custom_cmap,
-                   vmin=vmin,
-                   vmax=vmax,
-                   # center=0,
-                   cbar_kws={'label': 'Value'})
-        ax.set_title(f'Seq {names[i]} contrib on G, top 20%')
-    ax = plt.subplot(gs[r, 1]) 
-    sns.heatmap(para_sum.cpu(), ax=ax, 
-               cmap=custom_cmap,
-               vmin=vmin,
-               vmax=vmax,
-               # center=0,
-               cbar_kws={'label': 'Value'})
-    ax.set_title(f'Para sum contrib on G, top 20%')   
+    # Add visualization for bucket indices
+    ax = plt.subplot(gs[2, 1])
+    sns.heatmap(B_freq_buckets, ax=ax, 
+                cmap='viridis',
+                cbar_kws={'label': 'Bucket Index'})
+    ax.set_title('B_freq Bucket Indices')
     
-    r += 1
-    ax = plt.subplot(gs[r, 1])
-    sns.heatmap(vector_projection_3d(sum(Rs_para), G).cpu(), ax=ax, 
-                   cmap=custom_cmap,
-                   vmin=vmin,
-                   vmax=vmax,
-                   center=0,
-                   cbar_kws={'label': 'Value'})
-    ax.set_title(f'R_g_para contrib on G')
-    for i, matrix in enumerate([*Rs_seq]):
-        ax = plt.subplot(gs[r, i+2])
-        sns.heatmap(vector_projection_3d(matrix, R_g).cpu(), ax=ax, 
-                   cmap=custom_cmap,
-                   vmin=vmin,
-                   vmax=vmax,
-                   center=0,
-                   cbar_kws={'label': 'Value'})
-        ax.set_title(f'Seq {names[i+2]} contrib on R_g')
+    # Calculate bucket summations for each Rs_seq
+    def get_bucket_sums(Rs, filter=95):
+        bucket_sums = []
+        for rs in Rs:
+            rs_values = vector_projection_3d(rs, G).cpu()  # Get projection values
+            th = np.percentile(rs_values, filter)
+            th_mask = rs_values < th
+            rs_values[th_mask] = 0
+            bucket_sums_rs = []
+            for i in range(num_buckets):
+                mask = B_freq_buckets == i
+                bucket_sum = rs_values[mask].sum().item()# / torch.sum(mask)
+                bucket_sums_rs.append(bucket_sum)
+            bucket_sums.append(bucket_sums_rs)
+        return bucket_sums
+
+    # Plot histograms for bucket summations
+    r = 2  # Use row 2 for the histograms
+    Rs_seq_bucket_sums = get_bucket_sums(Rs_seq)
+    for i, sums in enumerate(Rs_seq_bucket_sums):
+        ax = plt.subplot(gs[r, i+2])  # Start from column 2
+        ax.bar(range(num_buckets), sums)
+        ax.set_title(f'Rs_seq[{i}] bucket sums')
+        #ax.set_ylim(0, 0.5)
+        ax.set_xlabel('Bucket Index')
+        ax.set_ylabel('Sum of Values')
+
+    r = 3  # Use row 2 for the histograms
+    Rs_para_bucket_sums = get_bucket_sums(Rs_para)
+    for i, sums in enumerate(Rs_para_bucket_sums):
+        ax = plt.subplot(gs[r, i+2])  # Start from column 2
+        ax.bar(range(num_buckets), sums)
+        ax.set_title(f'Rs_para[{i}] bucket sums')
+        #ax.set_ylim(0, 0.5)
+        ax.set_xlabel('Bucket Index')
+        ax.set_ylabel('Sum of Values')
+
+    
+    # r+=1
+    # for i, matrix in enumerate([*Rs_para]):
+    #     ax = plt.subplot(gs[r, i+2])
+    #     maxtrix = matrix.cpu() * B_freq_sf
+    #     sns.heatmap(vector_projection_3d(matrix, G).cpu(), ax=ax, 
+    #                cmap=custom_cmap,
+    #                vmin=vmin,
+    #                vmax=vmax,
+    #                center=0,
+    #                cbar_kws={'label': 'Value'})
+    #     ax.set_title(f'Para {names[i+2]} contrib on G')
+    
+    # r += 1
+    # para_sum = 0
+    # for i, matrix in enumerate([*Rs_para]):
+    #     maxtrix = matrix.cpu() * B_freq_sf
+    #     ax = plt.subplot(gs[r, i+2])
+    #     m = vector_projection_3d(matrix, G).cpu()
+    #     th_hi = np.percentile(m, 80)
+    #     mask = m < th_hi
+    #     m[mask] = 0
+    #     para_sum += m
+    #     sns.heatmap(m, ax=ax, 
+    #                cmap=custom_cmap,
+    #                vmin=vmin,
+    #                vmax=vmax,
+    #                # center=0,
+    #                cbar_kws={'label': 'Value'})
+    #     ax.set_title(f'Para {names[i]} contrib on G, top 20%')
+    # ax = plt.subplot(gs[r, 1]) 
+    # sns.heatmap(para_sum.cpu(), ax=ax, 
+    #            cmap=custom_cmap,
+    #            vmin=vmin,
+    #            vmax=vmax,
+    #            # center=0,
+    #            cbar_kws={'label': 'Value'})
+    # ax.set_title(f'Para sum contrib on G, top 20%')   
+    
+    # r += 1
+    # ax = plt.subplot(gs[r, 1])
+    # sns.heatmap(vector_projection_3d(sum(Rs_para), G).cpu(), ax=ax, 
+    #                cmap=custom_cmap,
+    #                vmin=vmin,
+    #                vmax=vmax,
+    #                center=0,
+    #                cbar_kws={'label': 'Value'})
+    # ax.set_title(f'R_g_para contrib on G')
+    # for i, matrix in enumerate([*Rs_seq]):
+    #     ax = plt.subplot(gs[r, i+2])
+    #     sns.heatmap(vector_projection_3d(matrix, R_g).cpu(), ax=ax, 
+    #                cmap=custom_cmap,
+    #                vmin=vmin,
+    #                vmax=vmax,
+    #                center=0,
+    #                cbar_kws={'label': 'Value'})
+    #     ax.set_title(f'Seq {names[i+2]} contrib on R_g')
             
-    r += 1
-    for i, matrix in enumerate([*Rs_para]):
-        ax = plt.subplot(gs[r, i+2])
-        sns.heatmap(vector_projection_3d(matrix, R_g).cpu(), ax=ax, 
-                   cmap=custom_cmap,
-                   vmin=vmin,
-                   vmax=vmax,
-                   center=0,
-                   cbar_kws={'label': 'Value'})
-        ax.set_title(f'Para {names[i+2]} contrib on R_g')
+    # r += 1
+    # for i, matrix in enumerate([*Rs_para]):
+    #     ax = plt.subplot(gs[r, i+2])
+    #     sns.heatmap(vector_projection_3d(matrix, R_g).cpu(), ax=ax, 
+    #                cmap=custom_cmap,
+    #                vmin=vmin,
+    #                vmax=vmax,
+    #                center=0,
+    #                cbar_kws={'label': 'Value'})
+    #     ax.set_title(f'Para {names[i+2]} contrib on R_g')
     
-    r += 1
-    for i, (m1, m2) in enumerate(zip(Rs_para, Rs_seq)):
-        ax = plt.subplot(gs[r, i+2])
-        m1 = vector_projection_3d(m1, G).cpu()
-        m2 = vector_projection_3d(m2, G).cpu()
-        ax.scatter(m1, m2, alpha=0.5, marker='.')
-        pall = pearson_correlation(m1, m2)
-        ax.set_title(f'Para vs Seq {names[i+2]} pearson {pall:.4f}')
-        ax.set_xlabel(f'Para {names[i+2]} over G')
-        ax.set_ylabel(f'Seq {names[i+2]} over G')
+    # # r += 1
+    # # for i, (m1, m2) in enumerate(zip(Rs_para, Rs_seq)):
+    # #     ax = plt.subplot(gs[r, i+2])
+    # #     m1 = m1.cpu() * B_freq_sf
+    # #     m1 = vector_projection_3d(m1, G.cpu()).cpu()
+    # #     m2 = vector_projection_3d(m2, G).cpu()
+    # #     ax.scatter(m1, m2, alpha=0.5, marker='.')
+    # #     pall = pearson_correlation(m1, m2)
+    # #     ax.set_title(f'Para vs Seq {names[i+2]} pearson {pall:.4f}')
+    # #     ax.set_xlabel(f'Para {names[i+2]} over G')
+    # #     ax.set_ylabel(f'Seq {names[i+2]} over G')
     
-    r += 1
-    m2 = vector_projection_3d(R_g, G).cpu()
-    for i, m in enumerate(Rs_para):
-        ax = plt.subplot(gs[r, i+2])
-        m1 = vector_projection_3d(m, G).cpu()
-        ax.scatter(m1, m2, alpha=0.5, marker='.')
-        pall = pearson_correlation(m1, m2)
-        ax.set_title(f'Para {names[i+2]} vs R_g pearson {pall:.4f}')
-        ax.set_xlabel(f'Para {names[i+2]} over G')
-        ax.set_ylabel(f'R_g over G')
+    # r += 1
+    # m2 = vector_projection_3d(R_g, G).cpu()
+    # for i, m in enumerate(Rs_para):
+    #     ax = plt.subplot(gs[r, i+2])
+    #     #m = m.cpu() * B_freq_sf
+    #     #m1 = vector_projection_3d(m, G.cpu()).cpu()
+    #     m1 = vector_projection_3d(m, G).cpu()
+    #     # m2 = vector_projection_3d(Rs_seq[i], G).cpu()
+    #     m_ratio = m2 / m1
+    #     #import pdb; pdb.set_trace()
+    #     ax.scatter(B_freq, m_ratio, alpha=0.5, marker='.')
+    #     ax.set_ylim(-5, 20)
+    #     #pall = pearson_correlation(m1, m2)
+    #     #ax.set_title(f'Para {names[i+2]} vs R_g pearson {pall:.4f}')
+    #     ax.set_xlabel(f'B_freq3')
+    #     ax.set_ylabel(f'Para over R_g')
     
-    r += 1
-    m2 = get_freq1(B).cpu()
-    ax = plt.subplot(gs[r, 0])
-    sns.heatmap(m2, ax=ax, 
-               cmap=custom_cmap,
-               cbar_kws={'label': 'Value'})
+    # r += 1
+    # m2 = vector_projection_3d(R_g, G).cpu()
+    # for i, m in enumerate(Rs_seq):
+    #     ax = plt.subplot(gs[r, i+2])
+    #     #m = m.cpu() * B_freq_sf
+    #     #m1 = vector_projection_3d(m, G.cpu()).cpu()
+    #     m1 = vector_projection_3d(m, G).cpu()
+    #     # m2 = vector_projection_3d(Rs_seq[i], G).cpu()
+    #     m_ratio = m2 / m1
+    #     #import pdb; pdb.set_trace()
+    #     ax.scatter(B_freq, m_ratio, alpha=0.5, marker='.')
+    #     ax.set_ylim(-5, 20)
+    #     #pall = pearson_correlation(m1, m2)
+    #     #ax.set_title(f'Para {names[i+2]} vs R_g pearson {pall:.4f}')
+    #     ax.set_xlabel(f'B_freq3')
+    #     ax.set_ylabel(f'Seq over R_g')
+    
+    # m_R_g = vector_projection_3d(R_g, G).cpu()
+    # # r += 1
+    # # m2 = get_freq1(B).cpu()
+    # # ax = plt.subplot(gs[r, 0])
+    # # sns.heatmap(m2, ax=ax, 
+    # #            cmap=custom_cmap,
+    # #            cbar_kws={'label': 'Value'})
 
-    m_R_g = vector_projection_3d(R_g, G).cpu()
-    ax = plt.subplot(gs[r, 1])
-    th = np.percentile(m2, 20)
-    mask = m2 > th
-    ax.scatter(m2[mask], m_R_g[mask], alpha=0.5, marker='.')
-    pall = pearson_correlation(m2, m_R_g)
-    ax.set_title(f'R_g over G vs B_freq1 pearson {pall:.4f}')
-    ax.set_xlabel(f'B_freq1')
-    ax.set_ylabel(f'R_g over G')
-    for i, m in enumerate(Rs_para):
-        ax = plt.subplot(gs[r, i+2])
-        m1 = vector_projection_3d(m, R_g, project=False).cpu()
-        ax.scatter(m1, m2, alpha=0.5, marker='.')
-        pall = pearson_correlation(m1, m2)
-        ax.set_title(f'Para {names[i+2]} vs B_freq1 pearson {pall:.4f}')
-        ax.set_xlabel(f'Para {names[i+2]} over R_g')
-        ax.set_ylabel(f'B_freq1')
+    # # ax = plt.subplot(gs[r, 1])
+    # # th = np.percentile(m2, 0)
+    # # mask = m2 > th
+    # # ax.scatter(m2[mask], m_R_g[mask], alpha=0.5, marker='.')
+    # # pall = pearson_correlation(m2, m_R_g)
+    # # ax.set_title(f'R_g over G vs B_freq1 pearson {pall:.4f}')
+    # # ax.set_xlabel(f'B_freq1')
+    # # ax.set_ylabel(f'R_g over G')
+    # # for i, m in enumerate(Rs_para):
+    # #     ax = plt.subplot(gs[r, i+2])
+    # #     m1 = vector_projection_3d(m, R_g, project=False).cpu()
+    # #     ax.scatter(m1, m2, alpha=0.5, marker='.')
+    # #     pall = pearson_correlation(m1, m2)
+    # #     ax.set_title(f'Para {names[i+2]} vs B_freq1 pearson {pall:.4f}')
+    # #     ax.set_xlabel(f'Para {names[i+2]} over R_g')
+    # #     ax.set_ylabel(f'B_freq1')
     
-    r += 1
-    m2 = get_freq2(B).cpu()
-    ax = plt.subplot(gs[r, 0])
-    sns.heatmap(m2, ax=ax, 
-               cmap=custom_cmap,
-               cbar_kws={'label': 'Value'})
-    ax = plt.subplot(gs[r, 1])
-    th = np.percentile(m2, 20)
-    mask = m2 > th
-    ax.scatter(m2[mask], m_R_g[mask], alpha=0.5, marker='.')
-    pall = pearson_correlation(m2[mask], m_R_g[mask])
-    ax.set_title(f'R_g over G vs B_freq2 pearson {pall:.4f}')
-    ax.set_xlabel(f'B_freq2')
-    ax.set_ylabel(f'R_g over G')
-    for i, m in enumerate(Rs_para):
-        ax = plt.subplot(gs[r, i+2])
-        m1 = vector_projection_3d(m, R_g, project=False).cpu()
-        ax.scatter(m1, m2, alpha=0.5, marker='.')
-        pall = pearson_correlation(m1, m2)
-        ax.set_title(f'Para {names[i+2]} vs B_freq2 pearson {pall:.4f}')
-        ax.set_xlabel(f'Para {names[i+2]} over R_g')
-        ax.set_ylabel(f'B_freq2')
+    # # r += 1
+    # # m2 = get_freq2(B).cpu()
+    # # ax = plt.subplot(gs[r, 0])
+    # # sns.heatmap(m2, ax=ax, 
+    # #            cmap=custom_cmap,
+    # #            cbar_kws={'label': 'Value'})
+    # # ax = plt.subplot(gs[r, 1])
+    # # th = np.percentile(m2, 0)
+    # # mask = m2 > th
+    # # ax.scatter(m2[mask], m_R_g[mask], alpha=0.5, marker='.')
+    # # pall = pearson_correlation(m2[mask], m_R_g[mask])
+    # # ax.set_title(f'R_g over G vs B_freq2 pearson {pall:.4f}')
+    # # ax.set_xlabel(f'B_freq2')
+    # # ax.set_ylabel(f'R_g over G')
+    # # for i, m in enumerate(Rs_para):
+    # #     ax = plt.subplot(gs[r, i+2])
+    # #     m1 = vector_projection_3d(m, R_g, project=False).cpu()
+    # #     ax.scatter(m1, m2, alpha=0.5, marker='.')
+    # #     pall = pearson_correlation(m1, m2)
+    # #     ax.set_title(f'Para {names[i+2]} vs B_freq2 pearson {pall:.4f}')
+    # #     ax.set_xlabel(f'Para {names[i+2]} over R_g')
+    # #     ax.set_ylabel(f'B_freq2')
     
-    r += 1
-    m2 = get_freq3(B, 3).cpu()
-    ax = plt.subplot(gs[r, 0])
-    sns.heatmap(m2, ax=ax, 
-               cmap=custom_cmap,
-               cbar_kws={'label': 'Value'})
-    ax = plt.subplot(gs[r, 1])
+    # r += 1
+    # m2 = get_freq3(B, 3).cpu()
+    # ax = plt.subplot(gs[r, 0])
+    # sns.heatmap(m2, ax=ax, 
+    #            cmap=custom_cmap,
+    #            cbar_kws={'label': 'Value'})
+    # ax = plt.subplot(gs[r, 1])
 
-    th = np.percentile(m2, 20)
-    mask = m2 > 0.025
-    ax.scatter(m2[mask], m_R_g[mask], alpha=0.5, marker='.')
-    pall = pearson_correlation(m2[mask], m_R_g[mask])
-    ax.set_title(f'R_g over G vs B_freq3 pearson {pall:.4f}')
-    ax.set_xlabel(f'B_freq3')
-    ax.set_ylabel(f'R_g over G')
-    for i, m in enumerate(Rs_para):
-        ax = plt.subplot(gs[r, i+2])
-        m1 = vector_projection_3d(m, R_g, project=False).cpu()
-        ax.scatter(m1, m2, alpha=0.5, marker='.')
-        pall = pearson_correlation(m1, m2)
-        ax.set_title(f'Para {names[i+2]} vs B_freq3 pearson {pall:.4f}')
-        ax.set_xlabel(f'Para {names[i+2]} over R_g')
-        ax.set_ylabel(f'B_freq3')
+    # th = np.percentile(m2, 0)
+    # mask = m2 > th
+    # ax.scatter(m2[mask], m_R_g[mask], alpha=0.5, marker='.')
+    # pall = pearson_correlation(m2[mask], m_R_g[mask])
+    # ax.set_title(f'R_g over G vs B_freq3 pearson {pall:.4f}')
+    # ax.set_xlabel(f'B_freq3')
+    # ax.set_ylabel(f'R_g over G')
+    # for i, m in enumerate(Rs_para):
+    #     ax = plt.subplot(gs[r, i+2])
+    #     m1 = vector_projection_3d(m, R_g, project=False).cpu()
+    #     ax.scatter(m1, m2, alpha=0.5, marker='.')
+    #     pall = pearson_correlation(m1, m2)
+    #     ax.set_title(f'Para {names[i+2]} vs B_freq3 pearson {pall:.4f}')
+    #     ax.set_xlabel(f'Para {names[i+2]} over R_g')
+    #     ax.set_ylabel(f'B_freq3')
 
     plt.tight_layout()
     plt.savefig('heatmap_visualization.png', dpi=300)  # High DPI for better quality

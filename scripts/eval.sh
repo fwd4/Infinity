@@ -90,7 +90,9 @@ test_gen_eval() {
     --rewrite_prompt ${rewrite_prompt}
 
     # detect objects
-    ${python_ext} evaluation/gen_eval/evaluate_images.py ${out_dir}/images \
+    out_dir=output/infinity_2b_evaluation/gen_eval_cfg4_tau1_cfg_insertion_layer0_20250508_133137
+    torchrun --nproc_per_node=${nproc_per_node} \
+    evaluation/gen_eval/evaluate_images.py ${out_dir}/images \
     --outfile ${out_dir}/results/det.jsonl \
     --model-config evaluation/gen_eval/mask2former/mask2former_swin-s-p4-w7-224_lsj_8x2_50e_coco.py \
     --model-path weights/mask2former

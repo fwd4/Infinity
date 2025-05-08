@@ -261,32 +261,55 @@ def evaluate_image(filepath, metadata):
 
 
 def main(args):
+
+
     full_results = []
-    pbar = tqdm.tqdm(total=len(os.listdir(args.imagedir)))
-    for subfolder in os.listdir(args.imagedir):
+    all_subfolders = [f for f in os.listdir(args.imagedir) if os.path.isdir(os.path.join(args.imagedir, f)) and f.isdigit()]
+    
+    # Distribute work across processes
+    rank_subfolders = all_subfolders[local_rank::world_size]
+    pbar = tqdm.tqdm(total=len(rank_subfolders), disable=local_rank != 0)
+    
+    for subfolder in rank_subfolders:
         pbar.update(1)
         folderpath = os.path.join(args.imagedir, subfolder)
-        if not os.path.isdir(folderpath) or not subfolder.isdigit():
-            continue
         with open(os.path.join(folderpath, "metadata.jsonl")) as fp:
             metadata = json.load(fp)
         # Evaluate each image
         for imagename in os.listdir(os.path.join(folderpath, "samples")):
             imagepath = os.path.join(folderpath, "samples", imagename)
             if not os.path.isfile(imagepath) or not (re.match(r"\d+\.png", imagename) or re.match(r"\d+\.jpg", imagename)):
-                print('skip 276')
+                if local_rank == 0:
+                    print('skip 276')
                 continue
             result = evaluate_image(imagepath, metadata)
             full_results.append(result)
-    # Save results
-    if os.path.dirname(args.outfile):
-        os.makedirs(os.path.dirname(args.outfile), exist_ok=True)
-    with open(args.outfile, "w") as fp:
-        pd.DataFrame(full_results).to_json(fp, orient="records", lines=True)
 
+    # Gather results from all processes
+    all_results = [None] * world_size
+    torch.distributed.all_gather_object(all_results, full_results)
+    
+    # Save results only on rank 0
+    if local_rank == 0:
+        combined_results = []
+        for results in all_results:
+            combined_results.extend(results)
+            
+        if os.path.dirname(args.outfile):
+            os.makedirs(os.path.dirname(args.outfile), exist_ok=True)
+        with open(args.outfile, "w") as fp:
+            pd.DataFrame(combined_results).to_json(fp, orient="records", lines=True)
+
+    torch.distributed.destroy_process_group()
 
 if __name__ == "__main__":
     args = parse_args()
+    # Initialize distributed training
+    local_rank = int(os.environ.get("LOCAL_RANK", 0))
+    world_size = int(os.environ.get("WORLD_SIZE", 1))
+    torch.cuda.set_device(local_rank)
+    torch.distributed.init_process_group(backend="nccl")
+
     object_detector, (clip_model, transform, tokenizer), classnames = load_models(args)
     THRESHOLD = float(args.options.get('threshold', 0.3))
     COUNTING_THRESHOLD = float(args.options.get('counting_threshold', 0.9))

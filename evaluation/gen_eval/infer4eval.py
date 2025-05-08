@@ -191,6 +191,7 @@ if __name__ == '__main__':
     for index, metadata in enumerate(tqdm.tqdm(metadatas, desc=f"Rank {rank} processing prompts")):
         # 计算全局索引
         global_index = start_idx + index if is_distributed else index
+        # seed_everything(args.seed)  # 每个提示使用不同的种子
         
         outpath = os.path.join(args.outdir, f"{global_index:0>5}")
         os.makedirs(outpath, exist_ok=True)
