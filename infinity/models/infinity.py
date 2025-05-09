@@ -61,6 +61,13 @@ def get_freq_old(codes, pn, ratio1):
     # 返回所有mask张量，顺序是从小比例到大比例差：top5, top10-top5, top30-top10, top50-top30  
     return tuple(masks)  
 
+def get_freq_scale_factor(freq, range=2.0, lb=1.0):
+    freq_min = torch.min(freq)
+    freq_max = torch.max(freq)
+    freq_scale = range / (freq_max - freq_min)
+    scale_factor = (freq - freq_min) * freq_scale + lb
+    return scale_factor
+
 def get_freq_core3(tensor, window_size=3):
     # codes: [1, pn*pn, d]
     B, S, C = tensor.shape
@@ -979,7 +986,7 @@ class Infinity(nn.Module):
                 residual = codes
                 summed_codes += codes
 
-            #residual_codes.append(residual)
+            residual_codes.append(residual)
             ######################### 2.1 #############################
 
             ######################### 2.2 #############################            
@@ -1004,6 +1011,14 @@ class Infinity(nn.Module):
                 torch.cuda.synchronize()
                 t0 = time.time() * 1e3
 
+            sf_range = kwargs.get('sf_range', 2)
+            sf_offset = kwargs.get('sf_offset', 1)
+            BASE = summed_codes.clone() # 1, 32, 1, 64, 64
+            B, C, _, H, W = BASE.shape
+            BASE = BASE.reshape(B, C, H*W).transpose(1, 2) # 1, 4096, 64
+            BFREQ = get_freq_core3(BASE) # 4096
+            BFREQ_SF = get_freq_scale_factor(BFREQ, sf_range, sf_offset).reshape(H, W)
+
             para_stage_inputs = get_para_stage_inputs(summed_codes,
                                                       last_stage_reshape,
                                                       vae,
@@ -1016,6 +1031,7 @@ class Infinity(nn.Module):
             pruning = kwargs.get("pruning", 1)
             # prune input tokens
             if pruning == 2:
+                pfs = False
                 com_last_stage = process_and_concat_last_stage(para_stage_inputs, mask_list)   #[B,com_pruned_seq_len,d] #[1,com_pruned_seq_len,32]
 
                 # ######################### 2.2 #############################            
@@ -1119,6 +1135,8 @@ class Infinity(nn.Module):
                         test_partial_list.append(test_partial_code)  
                     else:
                         test_partial_list.append(new_codes)
+                    #test_partial_list[-1] = test_partial_list[-1] * BFREQ_SF
+                    #print(f"scale factor multiplied: {torch.mean(BFREQ_SF)}")
                     start_id += len(mask)  
                 else:
                     new_codes = torch.zeros((B, vae_type, 1, 4096), device=codes.device, dtype=codes.dtype)
@@ -1129,6 +1147,7 @@ class Infinity(nn.Module):
                     new_codes = new_codes.view(*codes.shape[:3], pn_list[-1], pn_list[-1])
                     test_partial_list.append(new_codes)
                     start_id += seq_len
+            #test_partial_list[-1] = test_partial_list[-1] * BFREQ_SF
 
             if profile:
                 torch.cuda.synchronize()
@@ -1173,9 +1192,9 @@ class Infinity(nn.Module):
         if not ret_img:
             return ret, idx_Bl_list, []
         
-        #residual_codes += test_partial_list
-        #print(len(residual_codes))
-        #torch.save(residual_codes, f"residual_si_papra{si_para}.pkl")
+        # residual_codes += test_partial_list
+        # print(len(residual_codes))
+        # torch.save(residual_codes, f"residual_si_papra{si_para}.pkl")
         
         if vae_type != 0:
             summed_codes = sum(test_partial_list) + summed_codes
