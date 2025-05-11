@@ -94,8 +94,8 @@ def get_freq_with_lb_ub(code, lb, ub):
     top_low_indices = torch.topk(dc_diff, total_sz * ub // 100, largest=True, sorted=False).indices
 
     # 计算 mask（高比例减去低比例）
-    #mask_set = top_high_indices[~torch.isin(top_high_indices, top_low_indices)].cpu().numpy()
-    mask_set = set(top_high_indices.cpu().numpy()) - set(top_low_indices.cpu().numpy())
+    mask_set = top_high_indices[~torch.isin(top_high_indices, top_low_indices)].cpu().numpy()
+    #mask_set = set(top_high_indices.cpu().numpy()) - set(top_low_indices.cpu().numpy())
     # mask = torch.tensor(list(mask_set), dtype=torch.long, device=device)
     mask = list(mask_set)
     return mask

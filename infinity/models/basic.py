@@ -401,9 +401,14 @@ class SelfAttention(nn.Module):
                     kv_len += q_len  
                     # 仅切片一次并重用  
                     q_slice = q[:, start_q:start_q + q_len, :]  
-                    k_slice = k[:, :start_id_kv + kv_len, :]  
-                    v_slice = v[:, :start_id_kv + kv_len, :]  
-
+                    if causal == 2:
+                        start_k = start_id_kv + start_q
+                        end_k = start_k + q_len
+                        k_slice = torch.cat((self.cached_k, k[:, start_k:end_k, :]), dim=L_dim)
+                        v_slice = torch.cat((self.cached_v, k[:, start_k:end_k, :]), dim=L_dim)
+                    else:
+                        k_slice = k[:, :start_id_kv + kv_len, :]  
+                        v_slice = v[:, :start_id_kv + kv_len, :]  
                     # 处理注意力计算  
                     result = flash_attn_func(q_slice.to(v.dtype), k_slice.to(v.dtype), v_slice, dropout_p=0, softmax_scale=self.scale, **kw)
                     # 重新调整形状并直接放入预分配的输出张量  
@@ -426,10 +431,15 @@ class SelfAttention(nn.Module):
                     for i in range(para_num):  
                         q_len = len(mask_id[i])  
                         kv_len += q_len  
-                        # 仅切片一次并重用  
                         q_slice = q[:, :, start_q:start_q + q_len, :]  
-                        k_slice = k[:, :, :start_id_kv + kv_len, :]  
-                        v_slice = v[:, :, :start_id_kv + kv_len, :]  
+                        if causal == 2:
+                            start_k = start_id_kv + start_q
+                            end_k = start_k + q_len
+                            k_slice = torch.cat((self.cached_k, k[:, :, start_k:end_k, :]), dim=L_dim)
+                            v_slice = torch.cat((self.cached_v, k[:, :, start_k:end_k, :]), dim=L_dim)
+                        else:
+                            k_slice = k[:, :, :start_id_kv + kv_len, :]  
+                            v_slice = v[:, :, :start_id_kv + kv_len, :]  
 
                         # 处理注意力计算  
                         result = slow_attn(query=q_slice, key=k_slice, value=v_slice, scale=self.scale, attn_mask=attn_bias_or_two_vector, dropout_p=0).transpose(1, 2).reshape(B, -1, C)

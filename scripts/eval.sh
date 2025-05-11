@@ -256,8 +256,19 @@ case $task in
         ;;
     gen_eval)
         rewrite_prompt=2
-        out_dir="${out_dir_root}/gen_eval_${sub_fix}_$(date +%Y%m%d_%H%M%S)"
-        test_gen_eval
+        # out_dir="${out_dir_root}/gen_eval_${sub_fix}_$(date +%Y%m%d_%H%M%S)"
+        # test_gen_eval
+        for seed in $(seq 0 1024 5120); do
+            # 更新custom_config.yaml中的seed
+            sed -i "s/seed:.*$/seed: $seed/" /workspace/Infinity/configs/custom_config.yaml
+            
+            # 使用带有时间戳和seed的输出目录
+            out_dir="${out_dir_root}/gen_eval_${sub_fix}_seed${seed}_$(date +%Y%m%d_%H%M%S)"
+            test_gen_eval
+            
+            # 等待一小段时间以避免目录名冲突
+            sleep 1
+        done
         ;;
     mjhq30k_fid)
         long_caption_fid=1
