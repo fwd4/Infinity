@@ -8,8 +8,8 @@ init_args:
 gen_kwargs:
   partion_on_full_scale: true # if true, analyze on 64x64 summation code, else analyze on per-scale interpolated code
   pruning: 2 # 0: prune nothing 1: prune outputs 2: prune inouts
-  causal: 1
+  causal: 0
   rope2d_opt_level: 1
   using_flash: 0
   si_para: 8
-  ratio_list: [[50,30,15,5],[30,15,5,0]]
+  ratio_list: [[100,50,15,5],[50,15,5,0]]

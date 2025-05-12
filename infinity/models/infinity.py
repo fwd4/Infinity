@@ -100,6 +100,19 @@ def get_freq_with_lb_ub(code, lb, ub):
     mask = list(mask_set)
     return mask
 
+def get_freq_with_lb_ub_fast(codes, lb, ub):
+    dc_diff = get_freq_core3(codes)  # [B, 4096]
+    total_sz = dc_diff.numel()
+
+    # 计算 top-k 索引（并行处理整个 batch）
+    k_high = int(total_sz * lb // 100)
+    k_low = int(total_sz * ub // 100)
+
+    # 获取 top_high 和 top_low 的索引（已排序）
+    _, top_high_indices = torch.topk(dc_diff, k_high, dim=0, largest=True, sorted=True)  # [B, k_high]
+    mask = top_high_indices[k_low:]
+
+    return mask
 
 
 def get_freq(codes_list, ratio_list):
@@ -128,7 +141,9 @@ def get_freq(codes_list, ratio_list):
     device = codes_list[0].device  # 假设所有张量都在同一个设备上
 
     for codes, l, u in zip(codes_list, lb, ub):
-        mask = get_freq_with_lb_ub(codes, l, u)
+        # mask = get_freq_with_lb_ub(codes, l, u)
+        mask = get_freq_with_lb_ub_fast(codes, l, u)
+
         #mask = get_freq_with_lb_ub(codes, 10, 0)
         mask_list.append(mask)
     #mask_list[-1] = get_freq_with_lb_ub(codes_list[-1], 100, 0)
@@ -793,7 +808,8 @@ class Infinity(nn.Module):
         kv_opt = False,
         **kwargs
     ):   # returns List[idx_Bl]
-        # tt0 = time.time() * 1e3
+        torch.cuda.synchronize()
+        tt0 = time.time() * 1e3
 
         if g_seed is None: rng = None
         else: self.rng.manual_seed(g_seed); rng = self.rng
@@ -882,7 +898,7 @@ class Infinity(nn.Module):
         save_para_codes = False
         # with open('skip_list.pkl', 'rb') as f:
         #     skip_list = pickle.load(f)
-        profile = False
+        profile = True
 
         # 用于存储每个scale的codes和summed_codes
         # si_para = 9
@@ -924,7 +940,9 @@ class Infinity(nn.Module):
                 codes = vae.quantizer.lfq.indices_to_codes(idx_Bld, label_type='bit_label') 
                 return codes
 
-
+        if profile:
+            torch.cuda.synchronize()
+            tt1 = time.time() * 1e3
         n_seq_stages = min(si_para+1, len(scale_schedule))
         residual_codes = []
         rope2d_freqs_grid = self.rope2d_freqs_grid[str(tuple(scale_schedule))].to(last_stage.device)
@@ -1005,8 +1023,7 @@ class Infinity(nn.Module):
         if n_seq_stages <= num_stages_minus_1:
             si = n_seq_stages
             # import pdb; pdb.set_trace()
-            # assert len(ratio_list) == num_stages_minus_1 - si_para
-        
+            # assert len(ratio_list) == num_stages_minus_1 - si_para        
             if profile:
                 torch.cuda.synchronize()
                 t0 = time.time() * 1e3
@@ -1163,24 +1180,9 @@ class Infinity(nn.Module):
         # if save_para_codes:
         #     with open(f'outputs/codes_mtp/test_combined_data_{category}_50_5_5.pkl', 'wb') as f:
         #         pickle.dump(combined_data, f)
-
-
-        # # 将 codes_data 和 summed_codes_data 合并到一个字典中
-        # combined_data = {
-        #     'partial_codes_data': partial_codes_data,
-        #     'codes_data': codes_data,
-        #     'summed_codes_data': summed_codes_data
-        # }
-        # if save_codes:
-        #     # 保存 combined_data 到 pkl 文件
-        #     with open(f'outputs/codes/test_pixel_partialblock_data_{category}.pkl', 'wb') as f:
-        #         pickle.dump(partial_codes_data, f)
-        
-        # 保存 loss_data 到 pkl 文件
-        # if compute_loss:
-        #     with open(f'outputs/loss/loss_data_{category}.pkl', 'wb') as f:
-        #         pickle.dump(loss_data, f)
-
+        if profile:
+            torch.cuda.synchronize()
+            tt2 = time.time() * 1e3
         if inference_mode:
             for b in self.unregistered_blocks: (b.sa if isinstance(b, CrossAttnBlock) else b.attn).kv_caching(False)
         else:
@@ -1201,11 +1203,14 @@ class Infinity(nn.Module):
             img = vae.decode(summed_codes.squeeze(-3))
         else:
             img = vae.viz_from_ms_h_BChw(ret, scale_schedule=scale_schedule, same_shape=True, last_one=True)
-        tt3 = time.time() * 1e3
+        
+        if profile:
+            torch.cuda.synchronize()
+            tt3 = time.time() * 1e3
 
         img = (img + 1) / 2
         img = img.permute(0, 2, 3, 1).mul_(255).to(torch.uint8).flip(dims=(3,))
-        # print(f"pre: {tt1 - tt0:.2f}ms, backbone: {tt2-tt1:.2f}ms, post{tt3 - tt2:.2f}ms")
+        print(f"all time: {tt3 - tt0:.2f}ms, {tt1 - tt0:.2f}ms, backbone: {tt2 - tt1:.2f}ms, decode: {tt3 - tt2:.2f}ms")
         return residual_codes, idx_Bl_list, img
     
     @for_visualize

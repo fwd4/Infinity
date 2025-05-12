@@ -139,7 +139,7 @@ def gen_one_img(
     kv_opt = 0,
     **kwargs
 ):
-    sstt = time.time()
+    sstt = time.time()*1000
     if not isinstance(cfg_list, list):
         cfg_list = [cfg_list] * len(scale_schedule)
     if not isinstance(tau_list, list):
@@ -163,7 +163,8 @@ def gen_one_img(
     # ) as prof, torch.amp.autocast('cuda',enabled=True, dtype=torch.bfloat16, cache_enabled=True):
     # get_torch_mem_usage()
     with torch.amp.autocast('cuda',enabled=True, dtype=torch.bfloat16, cache_enabled=True):
-        stt = time.time()
+        torch.cuda.synchronize()
+        stt = time.time()*1000
         record_codes, _, img_list = infinity_test.autoregressive_infer_cfg(
             vae=vae,
             scale_schedule=scale_schedule,
@@ -182,10 +183,12 @@ def gen_one_img(
             kv_opt = kv_opt,
             **kwargs
         )
-    end = time.time()
+    torch.cuda.synchronize()
+    end = time.time()*1000
     COST.append(end - sstt)
     INFI_COST.append(end - stt)
     #get_torch_mem_usage()
+    print(f"cost:{end - sstt:.2f}ms,  infi_cost: {end - stt:.2f}ms")
     img = img_list[0]
     return img, record_codes
 

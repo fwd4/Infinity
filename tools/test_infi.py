@@ -1,12 +1,11 @@
 import os  
-os.environ["CUDA_VISIBLE_DEVICES"] = "3"  
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"  
 import random
 import os
 import os.path as osp
 import cv2
 import numpy as np
 from run_infinity import *
-from infinity.models.basic import scores_
 import pickle
 import matplotlib.pyplot as plt
 import os
@@ -49,8 +48,12 @@ args = argparse.Namespace(
     bf16=1,
     save_file='tmp.jpg',
     enable_model_cache=0,
-    si_para = 9,
-    ratio_list = [50,15,5],
+    pruning = 2,
+    causal = 0,
+    rope2d_opt_level = 1,
+    using_flash = 0,
+    si_para = 8,
+    ratio_list = [[100,50,15,5],[50,15,5,0]],
     kv_opt = None
 
 )
@@ -86,25 +89,6 @@ args=argparse.Namespace(
 )
 '''
 
-def set_random_seed(seed):  
-    # 设置Python内置模块的随机种子  
-    random.seed(seed)  
-    
-    # 设置NumPy的随机种子  
-    np.random.seed(seed)  
-    
-    # 设置PyTorch的随机种子  
-    torch.manual_seed(seed)  
-    
-    # 如果使用GPU，设置CUDA的随机种子  
-    if torch.cuda.is_available():  
-        torch.cuda.manual_seed(seed)  
-        torch.cuda.manual_seed_all(seed)  # 可能多个GPU  
-    
-    # 设置cuDNN的确定性模式（如果使用cuDNN）  
-    torch.backends.cudnn.deterministic = True  
-    torch.backends.cudnn.benchmark = False  
-
 # LOAD
 text_tokenizer, text_encoder = load_tokenizer(t5_path=args.text_encoder_ckpt)
 get_torch_mem_usage()
@@ -116,23 +100,6 @@ get_torch_mem_usage()
 infinity = load_transformer(vae, args)
 get_torch_mem_usage()
 
-# print(infinity)
-# PROMPT
-# prompts = {
-#     "vintage_insect": "Insect made from vintage 1960s electronic components, capacitors, resistors, transistors, wires, diodes, solder, circuitboard.",
-#     "macro_closeup": "Denis Villeneuve's extreme macro cinematographic close-up in water.",
-#     "3d_school": "A creative 3D image to be placed at the bottom of a mobile application's homepage, depicting a miniature school and children carrying backpacks.",
-#     "explore_more": "Create an image with 'Explore More' in an adventurous font over a picturesque hiking trail.",
-#     "toy_car": "Close-up shot of a diecast toy car, diorama, night, lights from windows, bokeh, snow.",
-#     "fairy_house": "House: white; pink tinted windows; surrounded by flowers; cute; scenic; garden; fairy-like; epic; photography; photorealistic; insanely detailed and intricate; textures; grain; ultra-realistic.",
-#     "cat_fashion": "Hyperrealistic black and white photography of cats fashion show in style of Helmut Newton.",
-#     "spacefrog_astroduck": "Two superheroes called Spacefrog (a dashing green cartoon-like frog with a red cape) and Astroduck (a yellow fuzzy duck, part-robot, with blue/grey armor), near a garden pond, next to their spaceship, a classic flying saucer, called the Tadpole 3000. Photorealistic.",
-#     "miniature_village": "An enchanted miniature village bustling with activity, featuring tiny houses, markets, and residents.",
-#     "corgi_dog": "A close-up photograph of a Corgi dog. The dog is wearing a black hat and round, dark sunglasses. The Corgi has a joyful expression, with its mouth open and tongue sticking out, giving an impression of happiness or excitement.",
-#     "robot_eggplant": "a robot holding a huge eggplant, sunny nature background",
-#     "perfume_product": "Product photography, a perfume placed on a white marble table with pineapple, coconut, lime next to it as decoration, white curtains, full of intricate details, realistic, minimalist, layered gestures in a bright and concise atmosphere, minimalist style.",
-#     "mountain_landscape": "The image presents a picturesque mountainous landscape under a cloudy sky. The mountains, blanketed in lush greenery, rise majestically, their slopes dotted with clusters of trees and shrubs. The sky above is a canvas of blue, adorned with fluffy white clouds that add a sense of tranquility to the scene. In the foreground, a valley unfolds, nestled between the towering mountains. It appears to be a rural area, with a few buildings and structures visible, suggesting the presence of a small settlement. The buildings are scattered, blending harmoniously with the natural surroundings. The image is captured from a high vantage point, providing a sweeping view of the valley and the mountains."
-# }
 
 prompts = {
     "vintage_insect": "A highly detailed, photorealistic insect sculpture crafted entirely from vintage 1960s electronic components, including capacitors, resistors, transistors, wires, diodes, solder, and circuit boards. The piece should showcase intricate textures and a retro-futuristic aesthetic.",
@@ -176,38 +143,6 @@ for category, prompt in prompts.items():
     scale_schedule = dynamic_resolution_h_w[h_div_w_template_][args.pn]['scales']
     scale_schedule = [(1, h, w) for (_, h, w) in scale_schedule]
 
-    # with open(f'outputs/codes/test_partial_pixel_data_{category}.pkl', 'rb') as file:
-    #     data = pickle.load(file)
-
-    # pdf_path = osp.join(output_dir, f"combine_{category}.pdf")
-    # with PdfPages(pdf_path) as pdf:
-    #     for key, value_list in data.items():
-    #         fig = plt.figure(figsize=(20, 16))  # 更大的尺寸以适应 8x4 网格  
-    #         fig.suptitle(f"Key: {key}", fontsize=18, y=0.98)  
-            
-    #         # 计算网格布局  
-    #         rows = 4  
-    #         cols = 8  
-    #         for idx, item in enumerate(value_list):
-    #             tensor_data = torch.tensor(item)
-    #             img = vae.decode(tensor_data.squeeze(-3))
-    #             img = (img + 1) / 2
-    #             img = img.permute(0, 2, 3, 1).mul_(255).to(torch.uint8).flip(dims=(3,))
-    #             image = img[0]
-    #             image = image.cpu().numpy()
-    #             ax = fig.add_subplot(rows, cols, idx + 1)  
-    #             ax.imshow(image)  
-    #             ax.set_title(f"Item {idx}", fontsize=9)  
-    #             ax.axis('off')  
-            
-    #         # 调整子图之间的间距  
-    #         plt.tight_layout(rect=[0, 0, 1, 0.96])  # 为标题留出空间  
-    #         # 保存当前页面到PDF  
-    #         pdf.savefig(fig)  
-    #         plt.close(fig)  
-    # print(f"All images for category '{category}' saved to {pdf_path}")
-
-
     # GEN
     generated_image = gen_one_img(
         infinity,
@@ -230,14 +165,20 @@ for category, prompt in prompts.items():
         si_para = args.si_para,
         ratio_list = args.ratio_list,
         kv_opt = args.kv_opt,
+        pruning = args.pruning,
+        causal = args.causal,
+        rope2d_opt_level = args.rope2d_opt_level,
+        using_flash = args.using_flash,
+
+
     )
 
-    # img_cnt+=1
-    # if img_cnt == 3:
-    #     exit(0)
+    img_cnt+=1
+    if img_cnt == 3:
+        exit(0)
 
     # SAVE
-    save_pic = True
+    save_pic = False
     if save_pic:
         save_path = osp.join(output_dir, f"{category}_mtp_{args.si_para}_{args.ratio_list}_{args.kv_opt}.jpg")
         cv2.imwrite(save_path, generated_image.cpu().numpy())
