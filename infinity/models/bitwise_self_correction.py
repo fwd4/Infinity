@@ -57,6 +57,7 @@ class BitwiseSelfCorrection(object):
                 else:
                     pred_all_bit_indices.append(bit_indices)
                 cum_var_input = cum_var_input + F.interpolate(quantized, size=vae_scale_schedule[-1], mode=self.vae.quantizer.z_interplote_up).contiguous()
+                #cum_var_input = cum_var_input
                 if si < len(vae_scale_schedule)-1:
                     this_scale_input = F.interpolate(cum_var_input, size=vae_scale_schedule[si+1], mode=self.vae.quantizer.z_interplote_up).contiguous()
                     if self.apply_spatial_patchify:

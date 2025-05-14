@@ -2,9 +2,9 @@
 init_args:
   pn: '1M'
   root_folder: '/workspace/Infinity'
-  model_path: '/home/model_data/infinity_2b_reg.pth'
-  vae_path: '/home/model_data/infinity_vae_d32reg.pth'
-  text_encoder_ckpt: '/home/model_data/flan-t5-xl'
+  model_path: 'weights/infinity_2b_reg.pth'
+  vae_path: 'weights/infinity_vae_d32reg.pth'
+  text_encoder_ckpt: 'weights/flan-t5-xl'
   add_lvl_embeding_only_first_block: 1
   use_bit_label: 1
   model_type: 'infinity_2b'
@@ -51,7 +51,11 @@ gen_kwargs:
 prompts:
   vintage_insect: "Insect made from vintage 1960s electronic components, capacitors, resistors, transistors, wires, diodes, solder, circuitboard."
   macro_closeup: "Denis Villeneuve's extreme macro cinematographic close-up in water."
+  dragon: "lighting dog dragon artgerm style, smiling with eyes squinting, outdoors, photorealistic, 8k, ultra-detailed, intricate, sharp focus, illustration"
+  walrus: "The walrus appeared in the Paws animation, with long teeth sticking out and putting its braces on"
   3d_school: "A creative 3D image to be placed at the bottom of a mobile application's homepage, depicting a miniature school and children carrying backpacks."
+  tree: "Area of Effect Healing tree, realism, welcoming, marketable"
+  tiger: "tiger in a green tropical forest, close up portrait, background with floral tropical leaf"
   explore_more: "Create an image with 'Explore More' in an adventurous font over a picturesque hiking trail."
   toy_car: "Close-up shot of a diecast toy car, diorama, night, lights from windows, bokeh, snow."
   fairy_house: "House: white; pink tinted windows; surrounded by flowers; cute; scenic; garden; fairy-like; epic; photography; photorealistic; insanely detailed and intricate; textures; grain; ultra-realistic."

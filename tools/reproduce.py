@@ -1,5 +1,4 @@
 import os
-os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 import random
 import torch
 import os.path as osp
@@ -138,8 +137,69 @@ def prepare_scale_schedule(h_div_w, pn):
     """准备缩放计划"""
     h_div_w_template_ = h_div_w_templates[np.argmin(np.abs(h_div_w_templates-h_div_w))]
     scale_schedule = dynamic_resolution_h_w[h_div_w_template_][pn]['scales']
-    return [(1, h, w) for (_, h, w) in scale_schedule]
+    # Add visualization code
+    schedule_list = [(1, h, w) for (_, h, w) in scale_schedule]
+    
+    # # Calculate products for visualization
+    # products = [a * b * c for a, b, c in schedule_list]
+    # indices = range(len(products))
 
+    # moss_products=products[:-3]+[0.35*products[-3],0.1*products[-2],0.05*products[-1]]
+    
+    # import matplotlib.pyplot as plt
+    # # Create bar plot with multiple bars
+    # plt.figure(figsize=(12, 6))
+    
+    # # Calculate bar positions
+    # bar_width = 0.35
+    # r1 = np.array(indices)
+    # r2 = [x + bar_width for x in r1]  # Shift moss_indices bars to the right
+    
+    # # Create bars
+    # plt.bar(r1, products, width=bar_width, color='red', label='VAR-Like', alpha=0.7)
+    # plt.bar(r2, moss_products, width=bar_width, color='green', label='MoSs', alpha=0.7)
+    
+    # # Set font sizes
+    # plt.xlabel('Scale Index', fontsize=24)
+    # plt.ylabel('Tokens', fontsize=24)
+    # plt.title('Scale-wise Token Investment', fontsize=28, pad=18)
+    # plt.grid(True, alpha=0.3)
+    
+    # # Increase legend font size
+    # plt.legend(fontsize=24)
+    
+    # def format_func(value, pos):
+    #     return f'{value/1000:.1f}k' if value >= 1000 else str(int(value))
+    # from matplotlib.ticker import FuncFormatter
+    # plt.gca().yaxis.set_major_formatter(FuncFormatter(format_func))
+    # # Increase tick label sizes
+    # plt.xticks([r + bar_width/2 for r in range(len(indices))], indices, fontsize=18)
+    # plt.yticks(fontsize=18)
+    
+    # # Save the plot
+    # plt.savefig('scale_schedule_plot.png', bbox_inches='tight')
+    # plt.close()
+    # exit(0)
+    
+    return schedule_list
+
+
+def cumsum_tensor_lists(tlist):
+    """
+    Args:
+        tlist (list): List of tensors
+        
+    Returns:
+        list: List of cumulative sum tensors
+    """
+        
+    result = []
+    cumsum = torch.zeros_like(tlist[0])  # Initialize with zeros tensor of same shape/dtype
+    
+    for t in tlist:
+        cumsum += t
+        result.append(cumsum.clone())  # Clone to avoid reference issues
+    return result
 
 def generate_images(infinity, vae, text_tokenizer, text_encoder, prompts, gen_kwargs, 
                    run_dir, total_iterations, rank, world_size):
@@ -148,7 +208,7 @@ def generate_images(infinity, vae, text_tokenizer, text_encoder, prompts, gen_kw
     iterations_per_process = (total_iterations + world_size - 1) // world_size
     
     # 将提示词列表转换为列表，以便分片
-    prompt_items = list(prompts.items())[:1]
+    prompt_items = list(prompts.items())#[5:6]
     # 设置随机种子，确保不同进程生成不同的图像
     # random.seed(rank + int(time.time()))
     
@@ -161,8 +221,9 @@ def generate_images(infinity, vae, text_tokenizer, text_encoder, prompts, gen_kw
             category, prompt = prompt_items[global_idx % len(prompt_items)]
             
             # 设置随机种子（每次迭代都不同）
+            # dragon uses 2
             seed_everything(0)
-            gen_kwargs['g_seed'] = 0 #random.randint(0, 10000)
+            gen_kwargs['g_seed'] = 0
             
             # 使用**kwargs方式调用gen_one_img
             generated_image, tensors = gen_one_img(
@@ -173,6 +234,53 @@ def generate_images(infinity, vae, text_tokenizer, text_encoder, prompts, gen_kw
                 prompt,
                 **gen_kwargs
             )
+            '''
+            cumsum_tensors = cumsum_tensor_lists(tensors)
+            B = cumsum_tensors[-1].permute(0, 2, 3, 4, 1)
+            print(len(cumsum_tensors), cumsum_tensors[0].shape, B.shape)
+            B = B.reshape(-1, 64*64, 32)
+            mask_list = get_freq([B] * 3, [75, 40, 15])
+            
+            for j, cumsum in enumerate(cumsum_tensors):
+                img = vae.decode(cumsum.squeeze(-3))
+                img = (img + 1) / 2
+                img = img.permute(0, 2, 3, 1).mul_(255).to(torch.uint8).flip(dims=(3,))[0]
+                img_r = vae.decode(cumsum_tensors[-1].squeeze(-3) - cumsum.squeeze(-3))
+                img_r = (img_r + 1) / 2
+                img_r = img_r.permute(0, 2, 3, 1).mul_(255).to(torch.uint8).flip(dims=(3,))[0]
+                
+                # Apply masks for the last 3 images
+                if j >= len(cumsum_tensors) - 3:
+                    mask_idx = j - (len(cumsum_tensors) - 3)  # Index for mask_list
+                    img_np = np.zeros((1024, 1024, 4), dtype=np.uint8)
+                    img_np[:, :, :3] = img.cpu().numpy()
+                    img_np[:, :, 3] = 255
+                    
+                    # Create a mask for 1024x1024 image
+                    h, w = 1024, 1024
+                    patch_size = 16
+                    
+                    # Convert flattened coordinates to 2D coordinates (assuming H/W=64)
+                    for coord in range(4096):
+                        if coord in mask_list[mask_idx]:
+                            continue
+                        x = (coord % 64) * patch_size
+                        y = (coord // 64) * patch_size
+                        
+                        # Apply 16x16 mask patch
+                        img_np[y:y+patch_size, x:x+patch_size] = [255,255,255,255]
+                    
+                    
+                save_path = osp.join(run_dir, f"re_{category}_gpu{rank}_iter{i}_stage{j}.jpg")
+                res_path = osp.join(run_dir, f"re_{category}_gpu{rank}_iter{i}_stage{j}_res.jpg")
+                save_np_path = osp.join(run_dir, f"re_{category}_gpu{rank}_iter{i}_stage{j}_np.jpg")
+                if not osp.exists(save_path):
+                    cv2.imwrite(save_path, img.cpu().numpy())
+                    cv2.imwrite(res_path, img_r.cpu().numpy())
+                    if j >= len(cumsum_tensors) - 3:
+                        #img_np = cv2.resize(img_np, (256, 256), interpolation=cv2.INTER_AREA)
+                        cv2.imwrite(save_np_path, img_np)
+            '''
 
             # Save image
             save_path = osp.join(run_dir, f"re_{category}_gpu{rank}_iter{i}.jpg")
@@ -210,6 +318,10 @@ def main():
     args = argparse.Namespace(**config.get('init_args', {}))
     # 从配置获取默认生成参数
     gen_kwargs = config.get('gen_kwargs', {}).copy()
+    # 准备缩放计划
+    gen_kwargs['scale_schedule'] = prepare_scale_schedule(gen_kwargs['h_div_w'], args.pn)
+    if 'h_div_w' in gen_kwargs:
+        del gen_kwargs['h_div_w']
     
     # 加载模型
     text_tokenizer, text_encoder, vae, infinity = load_models(args)
@@ -225,10 +337,6 @@ def main():
     # 设置迭代次数
     total_iterations = config.get('total_iterations', 1)
     
-    # 准备缩放计划
-    gen_kwargs['scale_schedule'] = prepare_scale_schedule(gen_kwargs['h_div_w'], args.pn)
-    if 'h_div_w' in gen_kwargs:
-        del gen_kwargs['h_div_w']
     
     # 生成图像
     generate_images(infinity, vae, text_tokenizer, text_encoder, prompts, gen_kwargs, 

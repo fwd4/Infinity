@@ -74,6 +74,30 @@ infer_eval_hpsv21() {
     --outdir ${out_dir}/images | tee ${out_dir}/log.txt
 }
 
+test_dpg_bench() {
+    # run inference
+    # torchrun --nproc_per_node=${nproc_per_node} \
+    # evaluation/dpg_bench/infer4eval.py \
+    # --outdir ${out_dir}/images
+
+    RESOLUTION=1024
+    PIC_NUM=4
+    PROCESSES=${nproc_per_node}
+    PORT=${PORT:-29501}
+
+
+    out_dir=output/infinity_2b_evaluation/dpg_bench_seed0_20250514_060654
+    (
+        cd /workspace/ELLA && \
+        uv run accelerate launch --num_machines 1 --num_processes $PROCESSES --multi_gpu --mixed_precision "fp16" --main_process_port $PORT \
+          ./dpg_bench/compute_dpg_bench.py \
+          --image-root-path /workspace/Infinity/${out_dir}/images \
+          --resolution $RESOLUTION \
+          --pic-num $PIC_NUM \
+          --vqa-model mplug
+    )
+}
+
 test_gen_eval() {
     # ${pip_ext} install -U openmim
     # mim install mmengine mmcv-full==1.7.2
@@ -258,13 +282,28 @@ case $task in
         rewrite_prompt=2
         # out_dir="${out_dir_root}/gen_eval_${sub_fix}_$(date +%Y%m%d_%H%M%S)"
         # test_gen_eval
-        for seed in $(seq 0 1024 5120); do
+        for seed in $(seq 0 1024 10240); do
             # 更新custom_config.yaml中的seed
             sed -i "s/seed:.*$/seed: $seed/" /workspace/Infinity/configs/custom_config.yaml
             
             # 使用带有时间戳和seed的输出目录
             out_dir="${out_dir_root}/gen_eval_${sub_fix}_seed${seed}_$(date +%Y%m%d_%H%M%S)"
             test_gen_eval
+            
+            # 等待一小段时间以避免目录名冲突
+            sleep 1
+        done
+        ;;
+    dpg_bench)
+        # out_dir="${out_dir_root}/gen_eval_${sub_fix}_$(date +%Y%m%d_%H%M%S)"
+        # test_gen_eval
+        for seed in $(seq 0 1024 0); do
+            # 更新custom_config.yaml中的seed
+            sed -i "s/seed:.*$/seed: $seed/" /workspace/Infinity/configs/custom_config.yaml
+            
+            # 使用带有时间戳和seed的输出目录
+            out_dir="${out_dir_root}/dpg_bench_seed${seed}_$(date +%Y%m%d_%H%M%S)"
+            test_dpg_bench
             
             # 等待一小段时间以避免目录名冲突
             sleep 1

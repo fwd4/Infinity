@@ -1,5 +1,5 @@
 import os  
-os.environ["CUDA_VISIBLE_DEVICES"] = "0"  
+#os.environ["CUDA_VISIBLE_DEVICES"] = "0"  
 import random
 import os
 import os.path as osp
@@ -15,9 +15,9 @@ from matplotlib.backends.backend_pdf import PdfPages
 # vae_path = '/share/public_models/Infinity/infinity_vae_d32reg.pth' #'/home/model_data/infinity_vae_d32reg.pth'
 # text_encoder_ckpt = '/share/public_models/flan-t5-xl'     #'/home/model_data/flan-t5-xl'
 
-model_path = '/home/model_data/infinity_2b_reg.pth'   #'/home/model_data/infinity_2b_reg.pth'
-vae_path = '/home/model_data/infinity_vae_d32reg.pth' #'/home/model_data/infinity_vae_d32reg.pth'
-text_encoder_ckpt = '/home/model_data/flan-t5-xl'     #'/home/model_data/flan-t5-xl'
+model_path = 'weights/infinity_2b_reg.pth'   #'/home/model_data/infinity_2b_reg.pth'
+vae_path = 'weights/infinity_vae_d32reg.pth' #'/home/model_data/infinity_vae_d32reg.pth'
+text_encoder_ckpt = 'weights/flan-t5-xl'     #'/home/model_data/flan-t5-xl'
 
 import torch
 import warnings  
@@ -174,7 +174,7 @@ for category, prompt in prompts.items():
     )
 
     img_cnt+=1
-    if img_cnt == 3:
+    if img_cnt == 2:
         exit(0)
 
     # SAVE

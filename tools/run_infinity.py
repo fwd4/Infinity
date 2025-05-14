@@ -20,10 +20,7 @@ from transformers import AutoTokenizer, T5EncoderModel, T5TokenizerFast
 from PIL import Image, ImageEnhance
 import torch.nn.functional as F
 from torch.cuda.amp import autocast
-import sys
-path_to_add = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..') 
-sys.path.append(path_to_add)
-from infinity.models.infinity import Infinity, get_torch_mem_usage#, ATTN_TIME
+from infinity.models.infinity import Infinity, get_torch_mem_usage, get_freq#, ATTN_TIME
 from infinity.models.basic import *
 import PIL.Image as PImage
 from torchvision.transforms.functional import to_tensor
@@ -161,11 +158,11 @@ def gen_one_img(
     #   record_shapes = True,
     #   with_stack = True
     # ) as prof, torch.amp.autocast('cuda',enabled=True, dtype=torch.bfloat16, cache_enabled=True):
-    # get_torch_mem_usage()
+    #     get_torch_mem_usage()
     with torch.amp.autocast('cuda',enabled=True, dtype=torch.bfloat16, cache_enabled=True):
         torch.cuda.synchronize()
         stt = time.time()*1000
-        record_codes, _, img_list = infinity_test.autoregressive_infer_cfg(
+        _, _, img_list = infinity_test.autoregressive_infer_cfg(
             vae=vae,
             scale_schedule=scale_schedule,
             label_B_or_BLT=text_cond_tuple, g_seed=g_seed,
@@ -183,14 +180,14 @@ def gen_one_img(
             kv_opt = kv_opt,
             **kwargs
         )
-    torch.cuda.synchronize()
-    end = time.time()*1000
-    COST.append(end - sstt)
-    INFI_COST.append(end - stt)
+    # torch.cuda.synchronize()
+    # end = time.time()*1000
+    # COST.append(end - sstt)
+    # INFI_COST.append(end - stt)
     #get_torch_mem_usage()
-    print(f"cost:{end - sstt:.2f}ms,  infi_cost: {end - stt:.2f}ms")
+    #print(f"cost:{end - sstt:.2f}ms,  infi_cost: {end - stt:.2f}ms")
     img = img_list[0]
-    return img, record_codes
+    return img, None
 
 def get_prompt_id(prompt):
     md5 = hashlib.md5()

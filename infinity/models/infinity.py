@@ -898,7 +898,7 @@ class Infinity(nn.Module):
         save_para_codes = False
         # with open('skip_list.pkl', 'rb') as f:
         #     skip_list = pickle.load(f)
-        profile = True
+        profile = False
 
         # 用于存储每个scale的codes和summed_codes
         # si_para = 9
@@ -1004,7 +1004,7 @@ class Infinity(nn.Module):
                 residual = codes
                 summed_codes += codes
 
-            residual_codes.append(residual)
+            #residual_codes.append(residual)
             ######################### 2.1 #############################
 
             ######################### 2.2 #############################            
@@ -1180,9 +1180,7 @@ class Infinity(nn.Module):
         # if save_para_codes:
         #     with open(f'outputs/codes_mtp/test_combined_data_{category}_50_5_5.pkl', 'wb') as f:
         #         pickle.dump(combined_data, f)
-        if profile:
-            torch.cuda.synchronize()
-            tt2 = time.time() * 1e3
+
         if inference_mode:
             for b in self.unregistered_blocks: (b.sa if isinstance(b, CrossAttnBlock) else b.attn).kv_caching(False)
         else:
@@ -1197,7 +1195,11 @@ class Infinity(nn.Module):
         # residual_codes += test_partial_list
         # print(len(residual_codes))
         # torch.save(residual_codes, f"residual_si_papra{si_para}.pkl")
-        
+
+        if profile:
+            torch.cuda.synchronize()
+            tt2 = time.time() * 1e3
+
         if vae_type != 0:
             summed_codes = sum(test_partial_list) + summed_codes
             img = vae.decode(summed_codes.squeeze(-3))
@@ -1207,10 +1209,10 @@ class Infinity(nn.Module):
         if profile:
             torch.cuda.synchronize()
             tt3 = time.time() * 1e3
-
         img = (img + 1) / 2
         img = img.permute(0, 2, 3, 1).mul_(255).to(torch.uint8).flip(dims=(3,))
-        print(f"all time: {tt3 - tt0:.2f}ms, {tt1 - tt0:.2f}ms, backbone: {tt2 - tt1:.2f}ms, decode: {tt3 - tt2:.2f}ms")
+        if profile:
+            print(f"all time: {tt3 - tt0:.2f}ms, {tt1 - tt0:.2f}ms, backbone: {tt2 - tt1:.2f}ms, decode: {tt3 - tt2:.2f}ms")
         return residual_codes, idx_Bl_list, img
     
     @for_visualize
