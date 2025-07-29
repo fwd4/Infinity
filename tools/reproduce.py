@@ -12,6 +12,7 @@ import argparse
 import torch.distributed as dist
 import torch.multiprocessing as mp
 from pytorch_lightning import seed_everything
+import torch
 
 
 
@@ -223,7 +224,7 @@ def generate_images(infinity, vae, text_tokenizer, text_encoder, prompts, gen_kw
             # 设置随机种子（每次迭代都不同）
             # dragon uses 2
             seed_everything(0)
-            gen_kwargs['g_seed'] = 0
+            gen_kwargs['g_seed'] = 42
             
             # 使用**kwargs方式调用gen_one_img
             generated_image, tensors = gen_one_img(
@@ -282,11 +283,31 @@ def generate_images(infinity, vae, text_tokenizer, text_encoder, prompts, gen_kw
                         cv2.imwrite(save_np_path, img_np)
             '''
 
-            # Save image
+            # Collect generated images for grid
+            if i % 6 == 0:
+                image_batch = []
+
+            image_batch.append(generated_image.cpu().permute(2, 0, 1)[[2,1,0],:,:])
+
+            # Save individual image
             save_path = osp.join(run_dir, f"re_{category}_gpu{rank}_iter{i}.jpg")
             if not osp.exists(save_path):
                 cv2.imwrite(save_path, generated_image.cpu().numpy())
-            
+
+            # When 6 images are collected, make a grid and save
+            if (i + 1) % 6 == 0 or (i + 1) == iterations_per_process:
+                from torchvision.utils import make_grid
+                from PIL import Image
+                import torchvision
+
+                grid = make_grid(image_batch, nrow=6)
+                grid_image = torchvision.transforms.ToPILImage()(grid)
+
+                grid_save_path = osp.join(run_dir, f"grid_gpu{rank}_batch{i//6}.jpg")
+                grid_image.save(grid_save_path)
+                #cv2.imwrite(grid_save_path, cv2.cvtColor(grid_np, cv2.COLOR_RGB2BGR))
+                image_batch = []
+
             # 更新进度条
             pbar.set_postfix({"prompt": category, "gpu": rank})
             pbar.update(1)
@@ -335,7 +356,7 @@ def main():
     run_dir = setup_output_dir(gen_kwargs, rank, world_size)
     
     # 设置迭代次数
-    total_iterations = config.get('total_iterations', 1)
+    total_iterations = config.get('total_iterations', 6)
     
     
     # 生成图像

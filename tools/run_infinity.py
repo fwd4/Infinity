@@ -180,12 +180,12 @@ def gen_one_img(
             kv_opt = kv_opt,
             **kwargs
         )
-    # torch.cuda.synchronize()
-    # end = time.time()*1000
-    # COST.append(end - sstt)
-    # INFI_COST.append(end - stt)
+    torch.cuda.synchronize()
+    end = time.time()*1000
+    COST.append(end - sstt)
+    INFI_COST.append(end - stt)
     #get_torch_mem_usage()
-    #print(f"cost:{end - sstt:.2f}ms,  infi_cost: {end - stt:.2f}ms")
+    print(f"cost:{end - sstt:.2f}ms,  infi_cost: {end - stt:.2f}ms")
     img = img_list[0]
     return img, None
 

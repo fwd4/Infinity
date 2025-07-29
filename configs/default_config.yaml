@@ -49,10 +49,16 @@ gen_kwargs:
 
 # 提示词
 prompts:
-  vintage_insect: "Insect made from vintage 1960s electronic components, capacitors, resistors, transistors, wires, diodes, solder, circuitboard."
-  macro_closeup: "Denis Villeneuve's extreme macro cinematographic close-up in water."
+  Rocking-Primate: "A chimpanzee dressed in a leather jacket plays an electric guitar with confidence."
+  Stylish-Mariachi-Warrior: "A mariachi warrior, hunting with a spear, with sunrise shimmering on her hair."
+  Enchanted-Forest-Stream: "A peaceful creek winds through a lush, mossy forest under a vibrant green canopy."
+  Cactus-Wonderland: "A vivid desert scene filled with a variety of tall and round cacti in bloom."
+  Campfire-on-the-Moon: "An astronaut sits beside a crackling campfire on a lunar surface, with Earth visible in the sky."
+  Tribal-Elder-of-Wisdom: "A dignified man with colorful tribal face paint and traditional adornments gazes forward with intensity."
   dragon: "lighting dog dragon artgerm style, smiling with eyes squinting, outdoors, photorealistic, 8k, ultra-detailed, intricate, sharp focus, illustration"
   walrus: "The walrus appeared in the Paws animation, with long teeth sticking out and putting its braces on"
+  vintage_insect: "Insect made from vintage 1960s electronic components, capacitors, resistors, transistors, wires, diodes, solder, circuitboard."
+  macro_closeup: "Denis Villeneuve's extreme macro cinematographic close-up in water."
   3d_school: "A creative 3D image to be placed at the bottom of a mobile application's homepage, depicting a miniature school and children carrying backpacks."
   tree: "Area of Effect Healing tree, realism, welcoming, marketable"
   tiger: "tiger in a green tropical forest, close up portrait, background with floral tropical leaf"

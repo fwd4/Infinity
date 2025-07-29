@@ -1,0 +1,33 @@
+[project]
+name = "infinity"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "colorama>=0.4.6",
+    "decord>=0.6.0",
+    "easydict>=1.13",
+    "einops>=0.8.1",
+    "flash-attn>=2.8.2",
+    "gputil>=1.4.0",
+    "httpx==0.20.0",
+    "imageio>=2.37.0",
+    "kornia>=0.8.1",
+    "numpy==2.2.4",
+    "omegaconf>=2.3.0",
+    "openai>=0.28.1",
+    "opencv-python>=4.12.0.88",
+    "pandas>=2.3.1",
+    "pytorch-lightning>=2.5.2",
+    "pytz>=2025.2",
+    "seaborn>=0.13.2",
+    "timm==0.9.6",
+    "transformers>=4.54.0",
+    "typed-argument-parser>=1.10.1",
+    "wandb>=0.21.0",
+]
+
+[[tool.uv.index]]
+url = "https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple"
+default = true
